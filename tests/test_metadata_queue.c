@@ -1,3 +1,4 @@
+#include "worker.h"
 /* Exercise the existing queue and pipe worker with real anonymous pipes.
  * Configuration/logging/encoding providers are isolated; delivery code below
  * is included directly from production. No filesystem FIFO or service is used. */
@@ -68,7 +69,7 @@ static int try_to_open_pipe_for_writing(const char *name) { (void)name; errno = 
 static int named_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
                                 void *(*entry)(void *), void *arg, const char *name) {
   (void)name;
-  return pthread_create(thread, attr, entry, arg);
+  return lx_worker_create(thread, attr, entry, arg);
 }
 /* Encoding is not under test; retain the provider's byte-count contract. */
 static char *base64_encode_so(const unsigned char *data, size_t length, char *out, size_t *size) {
@@ -105,7 +106,7 @@ static uint64_t now_ns(void) {
 }
 static void pause_briefly(void) {
   const struct timespec delay = {0, 1000000};
-  nanosleep(&delay, NULL);
+  lx_worker_nanosleep(&delay, NULL);
 }
 static void initialise_queue(void) {
   pc_queue_init(&metadata_queue, (char *)metadata_queue_items, sizeof(metadata_package),
@@ -130,7 +131,7 @@ static void drain_until_empty(int reader) {
   char bytes[8192];
   while (queue_count() || outstanding()) {
     assert(now_ns() < deadline);
-    ssize_t result = read(reader, bytes, sizeof(bytes));
+    ssize_t result = lx_worker_read(reader, bytes, sizeof(bytes));
     if (result < 0) {
       assert(errno == EAGAIN || errno == EWOULDBLOCK);
       pause_briefly();
@@ -143,12 +144,12 @@ static void stalled_reader_saturation_and_recovery(void) {
   int flags = fcntl(pipes[1], F_GETFL);
   assert(flags >= 0 && !fcntl(pipes[1], F_SETFL, flags | O_NONBLOCK));
   char padding[4096] = {0};
-  while (write(pipes[1], padding, sizeof(padding)) > 0) {}
+  while (lx_worker_write(pipes[1], padding, sizeof(padding)) > 0) {}
   assert(errno == EAGAIN || errno == EWOULDBLOCK);
   assert(!fcntl(pipes[1], F_SETFL, flags));
   fd = pipes[1];
   initialise_queue();
-  assert(!pthread_create(&metadata_thread, NULL, metadata_thread_function, NULL));
+  assert(!lx_worker_create(&metadata_thread, NULL, metadata_thread_function, NULL));
   assert(!send_ssnc_metadata('arst', "0/0/0", 5, 0));
   uint64_t deadline = now_ns() + 5000000000;
   while (queue_count()) { assert(now_ns() < deadline); pause_briefly(); }
@@ -172,8 +173,8 @@ static void stalled_reader_saturation_and_recovery(void) {
   drain_until_empty(pipes[0]);
   assert(!send_ssnc_metadata('arst', "4/5/6", 5, 0));
   drain_until_empty(pipes[0]);
-  assert(!pthread_cancel(metadata_thread));
-  assert(!pthread_join(metadata_thread, NULL));
+  assert(!lx_worker_request_stop(metadata_thread));
+  assert(!lx_worker_join(metadata_thread, NULL));
   assert(!close(pipes[0])); // worker cleanup closes its write descriptor
   pc_queue_delete(&metadata_queue);
   assert(!outstanding());

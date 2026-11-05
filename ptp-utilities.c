@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * This file is part of Shairport Sync.
  * Copyright (c) Mike Brady 2020--2025
@@ -42,6 +43,7 @@
 #define __STDC_FORMAT_MACROS
 #include "common.h"
 #include "ptp-utilities.h"
+#include "ipc_channel.h"
 #include "utilities/network_utilities.h"
 #include <inttypes.h>
 #include <unistd.h>
@@ -52,62 +54,7 @@ void *mapped_addr = NULL;
 // returns a copy of the shared memory data from the nqptp
 // shared memory interface, so long as it's open.
 int get_nqptp_data(struct shm_structure *nqptp_data) {
-  // uint64_t tn = get_absolute_time_in_ns(); // if interested in timing the function...
-  struct shm_structure local_nqptp_data;
-  int response = -1; // presume the worst. Fix it on success
-
-  // We need to ensure that when we read the record, we are not reading it while it is partly
-  // updated and therefore inconsistent. To achieve this, we do the following:
-
-  // We ensure that the secondary record is written by NQPTP _strictly after_
-  // all writes to the main record are complete.
-
-  // Here we read two copies of the entire record, the second
-  // _strictly after_ all reads from the first are complete.
-
-  // (Strict write and read ordering is ensured using the __sync_synchronize() construct.)
-
-  // We then compare the main record in the first read to the
-  // secondary record in the second read.
-
-  // If they are equal, we can be sure we have not read a record that has been
-  // made inconsistent by an interrupted update.
-
-  if ((mapped_addr != MAP_FAILED) && (mapped_addr != NULL)) {
-    int loop_count = 1;
-    do {
-      __sync_synchronize();
-      memcpy(nqptp_data, (char *)mapped_addr, sizeof(struct shm_structure));
-      __sync_synchronize();
-      // read again strictly after a full read -- this is to read the secondary strictly after the
-      // primary
-      memcpy(&local_nqptp_data, (char *)mapped_addr, sizeof(struct shm_structure));
-      // check that the main and secondary data sets match
-      if (memcmp(&nqptp_data->main, &local_nqptp_data.secondary, sizeof(shm_structure_set)) != 0) {
-        usleep(2); // microseconds
-        loop_count++;
-      }
-    } while (
-        (memcmp(&nqptp_data->main, &local_nqptp_data.secondary, sizeof(shm_structure_set)) != 0) &&
-        (loop_count < 10));
-    if (loop_count == 10) {
-      debug(1, "get_nqptp_data -- main and secondary records don't match after %d attempts!",
-            loop_count);
-      response = -1;
-    } else {
-      response = 0;
-    }
-  } else {
-    if (mapped_addr == NULL)
-      debug(1, "get_nqptp_data failed because the mapped_addr is NULL");
-    else if (mapped_addr == MAP_FAILED)
-      debug(1, "get_nqptp_data failed because the mapped_addr is MAP_FAILED");
-    else
-      debug(1, "get_nqptp_data failed");
-  }
-  // int64_t et = get_absolute_time_in_ns() - tn;
-  // debug(1, "get_nqptp_data time: %.3f microseconds.", 0.001 * et);
-  return response;
+  return lx_ipc_reader_snapshot(nqptp_data, get_absolute_time_in_ns());
 }
 
 int ptp_get_clock_version() {
@@ -166,60 +113,16 @@ int ptp_get_clock_info(uint64_t *actual_clock_id, uint64_t *time_of_sample,
 }
 
 int ptp_shm_interface_open() {
-  int response = 0;
-  debug(3, "ptp_shm_interface_open with mapped_addr = %" PRIuPTR "", (uintptr_t)mapped_addr);
-  if ((mapped_addr == NULL) || (mapped_addr == MAP_FAILED)) {
-    response = -1;
-    if (mapped_addr == NULL)
-      debug(3, "ptp_shm_interface_open is NULL");
-    if (mapped_addr == MAP_FAILED)
-      debug(3, "ptp_shm_interface_open is MAP_FAILED");
-
-    if (strcmp(config.nqptp_shared_memory_interface_name, "") != 0) {
-      response = 0;
-      int shared_memory_file_descriptor =
-          shm_open(config.nqptp_shared_memory_interface_name, O_RDONLY, 0);
-      if (shared_memory_file_descriptor >= 0) {
-        mapped_addr =
-            // needs to be PROT_READ | PROT_WRITE to allow the mapped memory to be writable for the
-            // mutex to lock and unlock
-            mmap(NULL, sizeof(struct shm_structure), PROT_READ, MAP_SHARED,
-                 shared_memory_file_descriptor, 0);
-        if (mapped_addr == MAP_FAILED) {
-          response = -1;
-        }
-        if (close(shared_memory_file_descriptor) == -1) {
-          response = -1;
-        }
-      } else {
-        response = -1;
-      }
-    } else {
-      debug(1, "No config.nqptp_shared_memory_interface_name");
-    }
-    if (response == 0)
-      debug(3, "ptp_shm_interface_open -- success!");
-    else
-      debug(3, "ptp_shm_interface_open -- fail!");
-  } else {
-    debug(3, "ptp_shm_interface_open -- already open!");
-  }
-  return response;
+  return lx_ipc_reader_open();
 }
 
 int ptp_shm_interface_close() {
-  int response = -1;
-  if ((mapped_addr != MAP_FAILED) && (mapped_addr != NULL)) {
-    debug(2, "ptp_shm_interface_close");
-    response = munmap(mapped_addr, sizeof(struct shm_structure));
-    if (response != 0)
-      debug(1, "error unmapping shared memory.");
-  }
-  mapped_addr = NULL;
-  return response;
+  return lx_ipc_reader_close();
 }
 
 void ptp_send_control_message_string(const char *msg) {
+  if(msg && (msg[0]=="T"[0] || msg[0]=="B"[0]))lx_ipc_reader_begin();
+  if(msg && msg[0]=="E"[0])lx_ipc_reader_pause();
   size_t full_message_size =
       strlen(config.nqptp_shared_memory_interface_name) + strlen(" ") + strlen(msg) + 1;
   char *full_message = malloc(full_message_size);

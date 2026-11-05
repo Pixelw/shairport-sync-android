@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * CoreAudio Backend (macOS). This file is part of Shairport Sync.
  * Copyright (c) 2026 the Shairport Sync contributors
@@ -333,7 +334,7 @@ static int play(void *buf, int samples, __attribute__((unused)) int sample_type,
     pthread_mutex_unlock(&buffer_mutex);
     total_bytes_to_transfer -= bytes_to_transfer;
     if (total_bytes_to_transfer > 0) {
-      usleep(5000);
+      lx_worker_usleep(5000);
     }
   }
 

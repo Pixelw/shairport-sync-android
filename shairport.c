@@ -1,3 +1,5 @@
+#include "lx_log.h"
+#include "worker.h"
 /*
  * Shairport, an Apple Airplay receiver
  * Copyright (c) James Laird 2013
@@ -237,7 +239,7 @@ void *soxr_time_check(__attribute__((unused)) void *arg) {
       (uint64_t)1500000000 + soxr_start_time; // loop for a second and a half, max -- no need to be
                                               // able to cancel it, do _don't even try_!
   while (get_absolute_time_in_ns() < loop_until_time) {
-    pthread_testcancel();
+    lx_worker_checkpoint();
     number_of_iterations++;
     for (i = 0; i < buffer_length; i++) {
       double w = sin(i * (frequency + number_of_iterations * 2) * 2 * M_PI / 44100);
@@ -247,7 +249,7 @@ void *soxr_time_check(__attribute__((unused)) void *arg) {
     }
 
     int oldState;
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+    lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
 
     soxr_io_spec_t io_spec;
     io_spec.itype = SOXR_INT32_I;
@@ -276,7 +278,7 @@ void *soxr_time_check(__attribute__((unused)) void *arg) {
                  &io_spec,                             // Input, output and transfer spec.
                  NULL, NULL);                          // Default configuration.
 
-    pthread_setcancelstate(oldState, NULL);
+    lx_worker_defer(oldState, NULL);
   }
 
   int64_t soxr_execution_time =
@@ -335,6 +337,7 @@ void usage(char *progname) {
     printf("    -X, --displayConfig     Output OS information, version string, command line, configuration file and active settings to the log.\n");
     printf("    --statistics            Print some interesting statistics. More will be printed if -v / -vv / -vvv are also chosen.\n");
     printf("    -v, --verbose           Print debug information; -v some; -vv more; -vvv lots -- generally too much.\n");
+    printf("    --log-output=logcat|stderr  Select diagnostic output (Android default: logcat).\n");
     printf("    -c, --configfile=FILE   Read configuration settings from FILE. Default is %s.\n", configuration_file_path);
     printf("    -a, --name=NAME         Set service name. Default is the hostname with first letter capitalised.\n");
     printf("    --password=PASSWORD     Require PASSWORD to connect. Default is no password.\n");
@@ -1807,7 +1810,7 @@ int parse_options(int argc, char **argv) {
   // playing without any error. Give each instance a distinct name to keep them
   // independent. The default is unchanged, so a single instance -- and any
   // existing configuration -- behaves exactly as before.
-  config.nqptp_shared_memory_interface_name = NULL;
+  config.nqptp_shared_memory_interface_name = strdup(NQPTP_INTERFACE_NAME);
   if (config.cfg != NULL) {
     const char *smi_str;
     if (config_lookup_string(config.cfg, "general.nqptp_shared_memory_interface_name", &smi_str)) {
@@ -1878,6 +1881,8 @@ int parse_options(int argc, char **argv) {
     config.nqptp_shared_memory_interface_name = strdup(NQPTP_INTERFACE_NAME);
   debug(1, "nqptp shared memory interface name: \"%s\".",
         config.nqptp_shared_memory_interface_name);
+
+  if(strcmp(config.nqptp_shared_memory_interface_name,NQPTP_INTERFACE_NAME))die("LX04 supports only the fixed /lx04 IPC client");
 
   // create the config.ap1_prefix[i]
   char apids[6 * 2 + 5 + 1]; // six pairs of digits, 5 colons and a NUL
@@ -2027,7 +2032,7 @@ int parse_options(int argc, char **argv) {
 #else
   /* Check if we are called with -d or --daemon or -j or justDaemoniseNoPIDFile options*/
   if ((daemonisewith != 0) || (daemonisewithout != 0)) {
-    fprintf(stderr,
+    lx_log_printf(LX_LOG_ERROR,
             "%s was built without libdaemon, so does not support daemonisation using the "
             "-d, --daemon, -j or --justDaemoniseNoPIDFile options\n",
             config.appName);
@@ -2091,7 +2096,7 @@ int parse_options(int argc, char **argv) {
       response = ptp_shm_interface_open(); // look for the NQPTP service
       if ((response == -1) && (errno == ENOENT) &&
           (get_absolute_time_in_ns() < nqptp_probe_deadline))
-        usleep(50000); // 50 ms, then retry
+        lx_worker_usleep(50000); // 50 ms, then retry
       else
         break;
     } while (1);
@@ -2233,8 +2238,8 @@ const char *pid_file_proc(void) {
 
 void exit_rtsp_listener() {
   debug(3, "exit_rtsp_listener begins");
-  pthread_cancel(rtsp_listener_thread);
-  pthread_join(rtsp_listener_thread, NULL); // not sure you need this
+  lx_worker_request_stop(rtsp_listener_thread);
+  lx_worker_join(rtsp_listener_thread, NULL); // not sure you need this
   debug(2, "exit_rtsp_listener ends");
 }
 
@@ -2299,14 +2304,14 @@ void exit_function() {
 #ifdef CONFIG_SOXR
     {
       int oldState;
-      pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+      lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
       if (soxr_time_check_thread != NULL) {
-        pthread_cancel(*soxr_time_check_thread);
-        pthread_join(*soxr_time_check_thread, NULL);
+        lx_worker_request_stop(*soxr_time_check_thread);
+        lx_worker_join(*soxr_time_check_thread, NULL);
         free(soxr_time_check_thread);
         soxr_time_check_thread = NULL;
       }
-      pthread_setcancelstate(oldState, NULL);
+      lx_worker_defer(oldState, NULL);
     }
 
 #endif
@@ -2407,204 +2412,17 @@ void handle_sigchld(__attribute__((unused)) int sig) {
 
 // for clean exits
 void intHandler(__attribute__((unused)) int k) {
-  debug(2, "exit on SIGINT");
-  exit_request(EXIT_SUCCESS);
+  (void)k; exit_request(EXIT_SUCCESS);
 }
 
 void termHandler(__attribute__((unused)) int k) {
-  debug(2, "exit on SIGTERM");
-  exit_request(EXIT_SUCCESS);
+  (void)k; exit_request(EXIT_SUCCESS);
 }
 
 void _display_config(const char *filename, const int linenumber, __attribute__((unused)) int argc,
                      __attribute__((unused)) char **argv) {
-
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-zero-length"
-#endif
-
-  _inform(filename, linenumber, ">> Display Config Start.");
-
-  // see the man entry on popen
-  FILE *fp;
-  int status;
-  char result[1024];
-
-  fp = popen("uname -a 2>/dev/null", "r");
-  if (fp != NULL) {
-    if (fgets(result, 1024, fp) != NULL) {
-      _inform(filename, linenumber, "");
-      _inform(filename, linenumber, "From \"uname -a\":");
-      if (result[strlen(result) - 1] <= ' ')
-        result[strlen(result) - 1] = '\0'; // remove the last character if it's not printable
-      _inform(filename, linenumber, " %s", result);
-    }
-    status = pclose(fp);
-    if (status == -1) {
-      debug(1, "Error on pclose");
-    }
-  }
-
-  fp = popen("(cat /etc/os-release | grep PRETTY_NAME | sed 's/PRETTY_NAME=//' | sed 's/\"//g') "
-             "2>/dev/null",
-             "r");
-  if (fp != NULL) {
-    if (fgets(result, 1024, fp) != NULL) {
-      _inform(filename, linenumber, "");
-      _inform(filename, linenumber, "From /etc/os-release:");
-      if (result[strlen(result) - 1] <= ' ')
-        result[strlen(result) - 1] = '\0'; // remove the last character if it's not printable
-      _inform(filename, linenumber, " %s", result);
-    }
-    status = pclose(fp);
-    if (status == -1) {
-      debug(1, "Error on pclose");
-    }
-  }
-
-  fp = popen("cat /sys/firmware/devicetree/base/model 2>/dev/null", "r");
-  if (fp != NULL) {
-    if (fgets(result, 1024, fp) != NULL) {
-      _inform(filename, linenumber, "");
-      _inform(filename, linenumber, "From /sys/firmware/devicetree/base/model:");
-      _inform(filename, linenumber, " %s", result);
-    }
-    status = pclose(fp);
-    if (status == -1) {
-      debug(1, "Error on pclose");
-    }
-  }
-
-  char *version_string = get_version_string();
-  if (version_string) {
-    _inform(filename, linenumber, "");
-    _inform(filename, linenumber, "Shairport Sync Version String:");
-    _inform(filename, linenumber, " %s", version_string);
-    free(version_string);
-  } else {
-    debug(1, "Can't print version string!\n");
-  }
-
-  if (argc != 0) {
-    char *obfp = result;
-    int i;
-    for (i = 0; i < argc - 1; i++) {
-      snprintf(obfp, strlen(argv[i]) + 2, "%s ", argv[i]);
-      obfp += strlen(argv[i]) + 1;
-    }
-    snprintf(obfp, strlen(argv[i]) + 1, "%s", argv[i]);
-    obfp += strlen(argv[i]);
-    *obfp = 0;
-
-    _inform(filename, linenumber, "");
-    _inform(filename, linenumber, "Command Line:");
-    _inform(filename, linenumber, " %s", result);
-  }
-
-  if (config.cfg == NULL)
-    _inform(filename, linenumber, "No configuration file.");
-  else {
-    int configpipe[2];
-    if (pipe(configpipe) == 0) {
-      FILE *cw;
-      cw = fdopen(configpipe[1], "w");
-      _inform(filename, linenumber, "");
-      _inform(filename, linenumber, "Configuration File:");
-      _inform(filename, linenumber, " %s", config_file_real_path);
-      _inform(filename, linenumber, "");
-      config_write(config.cfg, cw);
-      fclose(cw);
-      // get back the raw configuration file settings text
-      FILE *cr;
-      cr = fdopen(configpipe[0], "r");
-      int i = 0;
-      int ch = 0;
-      do {
-        ch = fgetc(cr);
-        if (ch == EOF) {
-          result[i] = '\0';
-        } else {
-          result[i] = (char)ch;
-          i++;
-        }
-      } while (ch != EOF);
-      fclose(cr);
-      // debug(1,"result is \"%s\".",result);
-      // remove empty stanzas
-      char *i0 = str_replace(result, "general : \n{\n};\n", "");
-      char *i1 = str_replace(i0, "sessioncontrol : \n{\n};\n", "");
-      char *i2 = str_replace(i1, "alsa : \n{\n};\n", "");
-      char *i3 = str_replace(i2, "sndio : \n{\n};\n", "");
-      char *i4 = str_replace(i3, "pulseaudio : \n{\n};\n", "");
-      char *i5 = str_replace(i4, "pipe : \n{\n};\n", "");
-      char *i6 = str_replace(i5, "dsp : \n{\n};\n", "");
-      char *i7 = str_replace(i6, "metadata : \n{\n};\n", "");
-      char *i8 = str_replace(i7, "mqtt : \n{\n};\n", "");
-      char *i9 = str_replace(i8, "diagnostics : \n{\n};\n", "");
-      char *i10 = str_replace(i9, "pipewire : \n{\n};\n", "");
-      char *i11 = str_replace(i10, "stdout : \n{\n};\n", "");
-      char *i12 = str_replace(i11, "pipe : \n{\n};\n", "");
-      char *i13 = str_replace(i12, "ao : \n{\n};\n", "");
-      // debug(1,"i10 is \"%s\".",i10);
-
-      // free intermediate strings
-      free(i12);
-      free(i11);
-      free(i10);
-      free(i9);
-      free(i8);
-      free(i7);
-      free(i6);
-      free(i5);
-      free(i4);
-      free(i3);
-      free(i2);
-      free(i1);
-      free(i0);
-
-      // print it out
-      if (strlen(i13) == 0)
-        _inform(filename, linenumber, "The Configuration file contains no active settings.");
-      else {
-        _inform(filename, linenumber, "Configuration File Settings:");
-        char *p = i13;
-        while (*p != '\0') {
-          i = 0;
-          while ((*p != '\0') && (*p != '\n')) {
-            result[i] = *p;
-            p++;
-            i++;
-          }
-          if (i != 0) {
-            result[i] = '\0';
-            _inform(filename, linenumber, " %s", result);
-          }
-          if (*p == '\n')
-            p++;
-        }
-      }
-
-      free(i13); // free the cleaned-up configuration string
-
-      /*
-            while (fgets(result, 1024, cr) != NULL) {
-              // replace funny character at the end, if it's there
-              if (result[strlen(result) - 1] <= ' ')
-                result[strlen(result) - 1] = '\0'; // remove the last character if it's not
-         printable _inform(filename, linenumber, " %s", result);
-            }
-      */
-    } else {
-      debug(1, "Error making pipe.\n");
-    }
-  }
-  _inform(filename, linenumber, "");
-  _inform(filename, linenumber, ">> Display Config End.");
-
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
+  (void)argc;(void)argv;
+  _inform(filename,linenumber,"LX04 Android ARMv7/API27 offline port; configuration contents omitted");
 }
 
 #define display_config(argc, argv) _display_config(__FILE__, __LINE__, argc, argv)
@@ -2673,10 +2491,11 @@ const char *av_channel_layout_name(uint64_t channel_layout) {
 #endif
 
 int main(int argc, char **argv) {
+  if(lx_log_init("SPS-main", &argc, argv)) return EXIT_FAILURE;
   exit_init(); // initialise the exit handler to give us a clean safe exit on request
   // initialise debug messages stuff -- level 0, no elapsed time, relative time, file and line
   // debug_init(int level, int show_elapsed_time, int show_relative_time, int show_file_and_line)
-  debug_init(0, 0, 1, 1, exit_request);
+  debug_init(1, 0, 0, 1, exit_request);
   memset(&config, 0, sizeof(config)); // also clears all strings, BTW
 #if defined(CONFIG_MBEDTLS) && MBEDTLS_VERSION_MAJOR >= 4
   // Mbed TLS 4 does all hashing, encryption and RSA through PSA
@@ -2785,13 +2604,13 @@ int main(int argc, char **argv) {
     config.output_name = first_backend_name;
   }
 
-  // config.statistics_requested = 0; // don't print stats in the log
+  config.statistics_requested = 1; /* 默认启用上游播放统计，配置仍可关闭。 */
   // config.userSuppliedLatency = 0; // zero means none supplied
 
   config.debugger_show_file_and_line =
       1; // by default, log the file and line of the originating message
   config.debugger_show_relative_time =
-      1;               // by default, log the  time back to the previous debug message
+      0;               // 默认由logcat提供时间戳，不额外输出间隔。
   config.timeout = 60; // wait this number of seconds to wait for a dropped RTSP connection to come
                        // back before declaring it lost.
   config.buffer_start_fill = 220;
@@ -2864,6 +2683,10 @@ int main(int argc, char **argv) {
 #endif
   // parse arguments into config -- needed to locate pid_dir
   int audio_arg = parse_options(argc, argv);
+  /* 将上游配置的前缀选项应用到实际日志出口。 */
+  set_show_elapsed_time(config.debugger_show_elapsed_time);
+  set_show_relative_time(config.debugger_show_relative_time);
+  set_show_file_and_line(config.debugger_show_file_and_line);
 
   if (display_config_selected != 0) {
     display_config(argc, argv);
@@ -3577,14 +3400,14 @@ int main(int argc, char **argv) {
 
   {
     int oldState;
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+    lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
     soxr_time_check_thread = malloc(sizeof(pthread_t));
     if (soxr_time_check_thread != NULL) {
       named_pthread_create(soxr_time_check_thread, NULL, &soxr_time_check, NULL, "soxr_checker");
     } else {
       debug(1, "couldn't get memory to start the soxr_checker");
     }
-    pthread_setcancelstate(oldState, NULL); // make this un-cancellable
+    lx_worker_defer(oldState, NULL); // make this un-cancellable
   }
 
 #endif
@@ -3732,9 +3555,5 @@ int main(int argc, char **argv) {
   named_pthread_create(&rtsp_listener_thread, NULL, &rtsp_listen_loop, NULL, "listener");
   atexit(exit_rtsp_listener);
 
-  // wait forever...
-  while (1) {
-    usleep(1000000);
-  }
-  return 0;
+  return lx_exit_wait();
 }

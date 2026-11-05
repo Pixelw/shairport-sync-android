@@ -1,0 +1,21 @@
+// Android API27配置示例；部署说明见android/README.md。
+general = {
+  name = "LX04 AirPlay2";
+  service_type = "airplay2";
+  output_backend = "aaudio";
+  mdns_backend = "dns-sd";
+  // 缩小软件衰减范围，让低百分比更容易听见；最高增益与静音语义不变。
+  volume_control_profile = "flat";
+  volume_range_db = 30;
+  // 配合12000帧共享缓冲，增加网络播放队列余量。
+  audio_backend_buffer_desired_length_in_seconds = 0.35;
+};
+
+// 与程序缺省值一致；可省略整个diagnostics组。
+diagnostics = {
+  log_verbosity = 1;
+  statistics = "yes";
+  log_show_time_since_startup = "no";
+  log_show_time_since_last_message = "no";
+  log_show_file_and_line = "yes";
+};

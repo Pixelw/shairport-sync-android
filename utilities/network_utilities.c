@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * Network Utilities. This file is part of Shairport Sync.
  * Copyright (c) Mike Brady 2026
@@ -33,12 +34,12 @@
 int eintr_checked_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
   int response;
   do {
-    response = accept(sockfd, addr, addrlen);
+    response = lx_worker_accept(sockfd, addr, addrlen);
 
     if (response == -1) {
       char errorstring[1024];
       strerror_r(errno, (char *)errorstring, sizeof(errorstring));
-      debug(1, "error %d accept()ing a socket %d: \"%s\". (Note: error %d will be ignored.)", errno,
+      debug(1, "error %d lx_worker_accept()ing a socket %d: \"%s\". (Note: error %d will be ignored.)", errno,
             sockfd, errorstring, EINTR);
     }
 
@@ -51,7 +52,7 @@ pthread_mutex_t safe_socket_lock = PTHREAD_MUTEX_INITIALIZER;
 int _safe_socket_close(const char *filename, const int linenumber, int *sockfd) {
   int result = 0;
   int oldstate;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldstate);
   pthread_mutex_lock(&safe_socket_lock);
   if (*sockfd == 0) {
     _debug(filename, linenumber, 1, "_safe_socket_close: socket is zero!");
@@ -65,6 +66,6 @@ int _safe_socket_close(const char *filename, const int linenumber, int *sockfd) 
     _debug(filename, linenumber, 1, "_safe_socket_close: socket already closed!");
   }
   pthread_mutex_unlock(&safe_socket_lock);
-  pthread_setcancelstate(oldstate, NULL);
+  lx_worker_defer(oldstate, NULL);
   return result;
 }

@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * Utility routines. This file is part of Shairport.
  * Copyright (c) James Laird 2013
@@ -724,7 +725,7 @@ uint8_t *base64_dec(char *input, int *outlen) {
 #ifdef CONFIG_OPENSSL
 char *base64_enc(uint8_t *input, int length) {
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   BIO *bmem, *b64;
   BUF_MEM *bptr;
   b64 = BIO_new(BIO_f_base64());
@@ -745,13 +746,13 @@ char *base64_enc(uint8_t *input, int length) {
 
   BIO_free_all(b64);
 
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   return buf;
 }
 
 uint8_t *base64_dec(char *input, int *outlen) {
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   BIO *bmem, *b64;
   int inlen = strlen(input);
 
@@ -775,7 +776,7 @@ uint8_t *base64_dec(char *input, int *outlen) {
   BIO_free_all(b64);
 
   *outlen = nread;
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   return buf;
 }
 #endif
@@ -808,7 +809,7 @@ static char super_secret_key[] =
 #ifdef CONFIG_OPENSSL
 uint8_t *rsa_apply(uint8_t *input, int inlen, int *outlen, int mode) {
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   uint8_t *out = NULL;
   BIO *bmem = BIO_new_mem_buf(super_secret_key, -1);                  // 1.0.2
   EVP_PKEY *rsaKey = PEM_read_bio_PrivateKey(bmem, NULL, NULL, NULL); // 1.0.2
@@ -885,7 +886,7 @@ uint8_t *rsa_apply(uint8_t *input, int inlen, int *outlen, int mode) {
     printf("error \"%s\" with EVP_PKEY_new:\n", ERR_error_string(ERR_get_error(), NULL));
   }
   *outlen = ol;
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   return out;
 }
 #endif
@@ -1339,160 +1340,14 @@ APST_t string_to_service_type(const char *parameter, const char *setting_name) {
 }
 
 void command_set_volume(double volume) {
-  // this has a cancellation point if waiting is enabled
-  if (config.cmd_set_volume) {
-    /*Spawn a child to run the program.*/
-    pid_t pid = fork();
-    if (pid == 0) { /* child process */
-      size_t command_buffer_size = strlen(config.cmd_set_volume) + 32;
-      char *command_buffer = (char *)malloc(command_buffer_size);
-      if (command_buffer == NULL) {
-        inform("Couldn't allocate memory for set_volume argument string");
-      } else {
-        memset(command_buffer, 0, command_buffer_size);
-        snprintf(command_buffer, command_buffer_size, "%s %f", config.cmd_set_volume, volume);
-        // debug(1,"command_buffer is \"%s\".",command_buffer);
-        int argC;
-        char **argV;
-        // debug(1,"set_volume command found.");
-        if (poptParseArgvString(command_buffer, &argC, (const char ***)&argV) != 0) {
-          // note that argV should be free()'d after use, but we expect this fork to exit
-          // eventually.
-          warn("Can't decipher on-set-volume command arguments \"%s\".", command_buffer);
-          free(argV);
-          free(command_buffer);
-        } else {
-          free(command_buffer);
-          // debug(1,"Executing on-set-volume command %s with %d arguments.",argV[0],argC);
-          execv(argV[0], argV);
-          warn("Execution of on-set-volume command \"%s\" failed to start", config.cmd_set_volume);
-          // debug(1, "Error executing on-set-volume command %s", config.cmd_set_volume);
-          _exit(EXIT_FAILURE); /* only if execv fails */
-        }
-      }
-      _exit(EXIT_SUCCESS);
-    } else {
-      if (config.cmd_blocking) { /* pid!=0 means parent process and if blocking is true, wait for
-                                    process to finish */
-        pid_t rc = waitpid(pid, 0, 0); /* wait for child to exit */
-        if (rc != pid) {
-          warn("Execution of on-set-volume command returned an error.");
-          debug(1, "on-set-volume command %s finished with error %d", config.cmd_set_volume, errno);
-        }
-      }
-      // debug(1,"Continue after on-set-volume command");
-    }
-  }
+  (void)volume; if(config.cmd_set_volume)warn("external command hooks disabled on LX04");
 }
 
 void command_start(void) {
-  // this has a cancellation point if waiting is enabled or a response is awaited
-  if (config.cmd_start) {
-    pid_t pid;
-    int pipes[2];
-
-    if (config.cmd_start_returns_output && pipe(pipes) != 0) {
-      warn("Unable to allocate pipe for popen of start command.");
-      debug(1, "pipe finished with error %d", errno);
-      return;
-    }
-    /*Spawn a child to run the program.*/
-    pid = fork();
-    if (pid == 0) { /* child process */
-      int argC;
-      char **argV;
-
-      if (config.cmd_start_returns_output) {
-        safe_socket_close(&pipes[0]);
-        if (dup2(pipes[1], 1) < 0) {
-          warn("Unable to reopen pipe as stdout for popen of start command");
-          debug(1, "dup2 finished with error %d", errno);
-          safe_socket_close(&pipes[1]);
-          return;
-        }
-      }
-
-      // debug(1,"on-start command found.");
-      if (poptParseArgvString(config.cmd_start, &argC, (const char ***)&argV) !=
-          0) // note that argV should be free()'d after use, but we expect this fork to exit
-             // eventually.
-        debug(1, "Can't decipher on-start command arguments");
-      else {
-        // debug(1,"Executing on-start command %s with %d arguments.",argV[0],argC);
-        execv(argV[0], argV);
-        warn("Execution of on-start command failed to start");
-        debug(1, "Error executing on-start command %s", config.cmd_start);
-        _exit(EXIT_FAILURE); /* only if execv fails */
-      }
-    } else {
-      if (config.cmd_blocking || config.cmd_start_returns_output) { /* pid!=0 means parent process
-                                    and if blocking is true, wait for
-                                    process to finish */
-        pid_t rc = waitpid(pid, 0, 0);                              /* wait for child to exit */
-        if ((rc != pid) && (errno != ECHILD)) {
-          // In this context, ECHILD means that the child process has already completed, I think!
-          warn("Execution of on-start command returned an error.");
-          debug(1, "on-start command %s finished with error %d", config.cmd_start, errno);
-        }
-        if (config.cmd_start_returns_output) {
-          static char buffer[256];
-          int len;
-          safe_socket_close(&pipes[1]);
-          len = read(pipes[0], buffer, 255);
-          safe_socket_close(&pipes[0]);
-          buffer[len] = '\0';
-          if (buffer[len - 1] == '\n')
-            buffer[len - 1] = '\0'; // strip trailing newlines
-          debug(1, "received '%s' as the device to use from the on-start command", buffer);
-#ifdef CONFIG_ALSA
-          set_alsa_out_dev(buffer);
-#endif
-        }
-      }
-      // debug(1,"Continue after on-start command");
-    }
-  }
+  if(config.cmd_start)warn("external command hooks disabled on LX04");
 }
 void command_execute(const char *command, const char *extra_argument, const int block) {
-  // this has a cancellation point if waiting is enabled
-  if (command) {
-    char new_command_buffer[2048];
-    char *full_command = (char *)command;
-    if (extra_argument != NULL) {
-      memset(new_command_buffer, 0, sizeof(new_command_buffer));
-      snprintf(new_command_buffer, sizeof(new_command_buffer), "%s %s", command, extra_argument);
-      full_command = new_command_buffer;
-    }
-
-    /*Spawn a child to run the program.*/
-    pid_t pid = fork();
-    if (pid == 0) { /* child process */
-      int argC;
-      char **argV;
-      if (poptParseArgvString(full_command, &argC, (const char ***)&argV) !=
-          0) // note that argV should be free()'d after use, but we expect this fork to exit
-             // eventually.
-        debug(1, "Can't decipher command arguments in \"%s\".", full_command);
-      else {
-        // debug(1,"Executing command %s",full_command);
-        execv(argV[0], argV);
-        warn("Execution of command \"%s\" failed to start", full_command);
-        debug(1, "Error executing command \"%s\".", full_command);
-        _exit(EXIT_FAILURE); /* only if execv fails */
-      }
-    } else {
-      if (block) { /* pid!=0 means parent process and if blocking is true, wait for
-                                    process to finish */
-        pid_t rc = waitpid(pid, 0, 0); /* wait for child to exit */
-        if ((rc != pid) && (errno != ECHILD)) {
-          // In this context, ECHILD means that the child process has already completed, I think!
-          warn("Execution of command \"%s\" returned an error.", full_command);
-          debug(1, "Command \"%s\" finished with error %d", full_command, errno);
-        }
-      }
-      // debug(1,"Continue after on-unfixable command");
-    }
-  }
+  (void)extra_argument;(void)block; if(command)warn("external command hooks disabled on LX04");
 }
 
 void command_stop(void) {
@@ -1766,36 +1621,7 @@ uint64_t get_absolute_time_in_ns() {
 }
 
 int try_to_open_pipe_for_writing(const char *pathname) {
-  // tries to open the pipe in non-blocking mode first.
-  // if it succeeds, it sets it to blocking.
-  // if not, it returns -1.
-
-  int fdis = open(pathname, O_WRONLY | O_NONBLOCK); // open it in non blocking mode first
-
-  // we check that it's not a "real" error. From the "man 2 open" page:
-  // "ENXIO  O_NONBLOCK | O_WRONLY is set, the named file is a FIFO, and no process has the FIFO
-  // open for reading." Which is okay.
-  // This is checked by the caller.
-
-  if (fdis >= 0) {
-    // now we switch to blocking mode
-    int flags = fcntl(fdis, F_GETFL);
-    if (flags == -1) {
-      char errorstring[1024];
-      getErrorText((char *)errorstring, sizeof(errorstring));
-      debug(1, "try_to_open_pipe -- error %d (\"%s\") getting flags of pipe: \"%s\".", errno,
-            (char *)errorstring, pathname);
-    } else {
-      flags = fcntl(fdis, F_SETFL, flags & ~O_NONBLOCK);
-      if (flags == -1) {
-        char errorstring[1024];
-        getErrorText((char *)errorstring, sizeof(errorstring));
-        debug(1, "try_to_open_pipe -- error %d (\"%s\") unsetting NONBLOCK of pipe: \"%s\".", errno,
-              (char *)errorstring, pathname);
-      }
-    }
-  }
-  return fdis;
+  (void)pathname; errno=ENOTSUP; return -1; /* 本目标不提供任意路径 FIFO 输出。 */
 }
 
 /* from http://burtleburtle.net/bob/rand/smallprng.html */
@@ -1885,7 +1711,7 @@ void sps_nanosleep(const time_t sec, const long nanosec) {
   req.tv_sec = sec;
   req.tv_nsec = nanosec;
   do {
-    result = nanosleep(&req, &rem);
+    result = lx_worker_nanosleep(&req, &rem);
     rem = req;
   } while ((result == -1) && (errno == EINTR));
   if (result == -1)
@@ -1934,11 +1760,11 @@ void mutex_unlock(void *arg) { pthread_mutex_unlock((pthread_mutex_t *)arg); }
 void thread_cleanup(void *arg) {
   debug(3, "thread_cleanup called.");
   pthread_t *thread = (pthread_t *)arg;
-  pthread_cancel(*thread);
+  lx_worker_request_stop(*thread);
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
-  pthread_join(*thread, NULL);
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
+  lx_worker_join(*thread, NULL);
+  lx_worker_defer(oldState, NULL);
   debug(3, "thread_cleanup done.");
 }
 
@@ -2318,7 +2144,7 @@ int get_device_id(uint8_t *id, int int_length) {
   int64_t time_to_wait;
   do {
     int oldState;
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+    lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
     if (getifaddrs(&ifaddr) == 0) {
       t = id;
       int found = 0;
@@ -2354,10 +2180,10 @@ int get_device_id(uint8_t *id, int int_length) {
       }
       freeifaddrs(ifaddr);
     }
-    pthread_setcancelstate(oldState, NULL);
+    lx_worker_defer(oldState, NULL);
     // wait a little time if we haven't got a response
     if (response != 0) {
-      usleep(100000);
+      lx_worker_usleep(100000);
     }
     time_to_wait = wait_until - get_absolute_time_in_ns();
   } while ((response != 0) && (time_to_wait > 0));
@@ -2368,12 +2194,12 @@ int get_device_id(uint8_t *id, int int_length) {
 
 char *bnprintf(char *buffer, ssize_t max_bytes, const char *format, ...) {
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   va_list args;
   va_start(args, format);
   vsnprintf(buffer, max_bytes, format, args);
   va_end(args);
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   // debug(1,"bnprintf string is: \"%s\"", buffer);
   return buffer;
 }
@@ -2401,7 +2227,7 @@ int named_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
   va_start(args, format);
   vsnprintf(actual_name, sizeof(actual_name), format, args);
   va_end(args);
-  int response = pthread_create(thread, attr, start_routine, arg);
+  int response = lx_worker_create(thread, attr, start_routine, arg);
   if (response != 0) {
     debug(1, "error creating thread \"%s\"", actual_name);
   }
@@ -2416,78 +2242,7 @@ int named_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 int named_pthread_create_with_priority(pthread_t *thread, int priority,
                                        void *(*start_routine)(void *), void *arg,
                                        const char *format, ...) {
-
-#ifdef COMPILE_FOR_OSX
-
-  // On macOS, don't ask for any special priority. A POSIX SCHED_FIFO priority is placed on
-  // a different scale from Linux's, and small values such as 2 or 3 end up below ordinary
-  // threads (which sit at about 31), so requesting one makes the thread run worse, not
-  // better. Just create a normal thread.
-  (void)priority;
-  (void)format;
-  return pthread_create(thread, NULL, start_routine, arg);
-
-#else
-
-  // if this gets a permissions error, it'll try to create a thread without any special
-  // priority or scheduling
-
-  static int failed_to_set_rt = 0;
-
-  struct sched_param param;
-  pthread_attr_t attr;
-  int ret = 0;
-
-  char actual_name[16];
-  va_list args;
-  va_start(args, format);
-  vsnprintf(actual_name, sizeof(actual_name), format, args);
-  va_end(args);
-
-  /* Initialize pthread attributes (default values) */
-  ret = pthread_attr_init(&attr);
-  if (ret == 0) {
-    /* Set scheduler policy and priority of pthread */
-    ret = pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
-    if (ret == 0) {
-      param.sched_priority = priority;
-      ret = pthread_attr_setschedparam(&attr, &param);
-      if (ret == 0) {
-        /* Use scheduling parameters of attr */
-        ret = pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
-        if (ret != 0) {
-          debug(1, "pthread setinheritsched failed");
-        }
-      } else {
-        debug(1, "pthread setschedparam failed");
-      }
-    } else {
-      debug(1, "pthread setschedpolicy failed");
-    }
-  } else {
-    debug(1, "init pthread attributes failed");
-  }
-  // ret == 0 if creating and setting up the attributes was successful
-  if (ret == 0) {
-
-    ret = pthread_create(thread, &attr, start_routine, arg);
-    pthread_attr_destroy(&attr);
-  }
-  // ret will be non-zero if there was a problem creating the attribute or creating the prioritized
-  // thread
-  if (ret != 0) {
-    ret = pthread_create(thread, NULL, start_routine, arg);
-    if (failed_to_set_rt == 0) {
-      inform("Can not set realtime properties of thread \"%s\".", actual_name);
-      failed_to_set_rt = 1;
-    }
-  }
-  if (ret == 0) {
-    pthread_setname_np(*thread, actual_name);
-  } else {
-    die("named_pthread_create_with_priority failed with error %d", ret);
-  }
-  return ret;
-
-#endif
+  (void)priority; char name[16]; va_list args; va_start(args,format);
+  vsnprintf(name,sizeof(name),format,args);va_end(args);
+  return named_pthread_create(thread,NULL,start_routine,arg,"%s",name);
 }

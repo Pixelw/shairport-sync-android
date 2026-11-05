@@ -1,0 +1,27 @@
+# Source and license notices
+
+This fork integrates the Android ARMv7/API27 port directly into Shairport Sync.
+Original source copyright and license headers are retained. `../COPYING` refers
+to the individual upstream source licenses; `../LICENSES/` is retained.
+
+- Shairport Sync 5.6.2: upstream commit `0a34fbda83724cc06266aadcf7c88acc8fef4e7d`.
+- NQPTP 1.2.9: upstream commit `ab8fb67483411640fd7f1e193889482f2421c37c`.
+  The bundled source is in `nqptp/`, including its GPL version 2 license.
+  Both copies of `nqptp-shm-structures.h` retain their original GPL version 2
+  notices; adding the Android port does not relicense those files.
+- Newly authored Android port modules, headers, build scripts and documentation
+  are MIT licensed under `LICENSE`. MIT notices on new modules apply to those
+  modules, not the third-party headers they include or the combined programs.
+  Changes within existing upstream files retain those files' licenses.
+- Public dependencies and host build tools are pinned in `dependencies.lock.json`.
+  Their license texts are in `licenses/dependencies/`; original source archives
+  are downloaded and SHA256 verified by the build. The popt external-command
+  change is recorded in `patches/popt-no-exec.patch` and the dependency recipe.
+- NDK r27d is supplied separately. `toolchain.lock.json` records the original
+  macOS package and core file checksums. It is not a complete installed-NDK
+  manifest or a Linux package lock.
+
+This is a source-only import. No Android firmware libraries, private AudioTrack
+ABI, toolchain, dependency binaries, pairing state, device logs, or media are
+included. The source tree has multiple licenses; MIT for new code does not
+replace the licenses of Shairport Sync, NQPTP, or the linked dependencies.

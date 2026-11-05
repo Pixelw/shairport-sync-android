@@ -59,7 +59,9 @@ extern audio_output audio_pipe;
 extern audio_output audio_stdout;
 #endif
 
+extern audio_output audio_aaudio; /* 公共 NDK AAudio 后端。 */
 static audio_output *outputs[] = {
+    &audio_aaudio,
 #ifdef CONFIG_COREAUDIO
     &audio_coreaudio,
 #endif
@@ -486,11 +488,11 @@ uint32_t get_channel_settings(const char *stanza_name, const char *setting_name)
   unsigned int c;
   uint32_t t_channel_set = channel_set;
   for (c = 0; c <= SPS_GREATEST_CHANNEL_COUNT; c++) {
-    if ((t_channel_set & (1 << c)) != 0) {
+    if ((t_channel_set & (1U << c)) != 0) {
       snprintf(numbuf, sizeof(numbuf) - 1, "%u", c);
       snprintf(p, sizeof(buf) - (p - buf) - 1, "%s", numbuf);
       p = p + strlen(numbuf);
-      t_channel_set -= (1 << c);
+      t_channel_set -= (1U << c);
       if (t_channel_set != 0) {
         snprintf(p, sizeof(buf) - (p - buf) - 1, ", ");
         p = p + strlen(", ");

@@ -1,0 +1,193 @@
+{
+  "revision": "27.3.13750724",
+  "archive": {
+    "file": "android-ndk-r27d-darwin.dmg",
+    "url": "https://dl.google.com/android/repository/android-ndk-r27d-darwin.dmg",
+    "bytes": 924374593,
+    "sha1": "80f11292080fab4e869799f1d23caa88dcf3c709",
+    "sha256": "0a0b76d927dcb202da6067ffefb2875bc3963ba9de22b89f9b1bdb299dfdf395"
+  },
+  "limits": "Core executables, ARM API27 stubs/CRT and ARM compiler runtimes only; not a complete installed NDK file manifest. Archive SHA256 pins complete original package.",
+  "files": [
+    {
+      "path": "source.properties",
+      "bytes": 108,
+      "sha256": "fb5eec1ca5dac09442109cf79e9ce49faecd8b312dbc997e88903a394e14994a"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/bin/clang",
+      "bytes": 169477200,
+      "sha256": "1745f25e52e55ed16c76baed4b5e20966e6e2cd5a2cdaf16ef82d6eb06d3fcc2"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/bin/ld.lld",
+      "bytes": 113908784,
+      "sha256": "c8146248c01583245bd88400a13719e8faae30d04ba8bc993de0bb983c82afdc"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf",
+      "bytes": 11555680,
+      "sha256": "0e47f24b972d174b080ee4ae73a244eb7ae03a09b8cb7fbdea0b6470f76b64b5"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-objdump",
+      "bytes": 31625120,
+      "sha256": "413bae5448dd6b8092452ffc9877236c2bf2f86239bdc81eabadb0d3cf172d77"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi27-clang",
+      "bytes": 204,
+      "sha256": "39e029e6007ce42fb9177af9522f98635ecc1148a230ea0f4be708e7b0f8359d"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/arm-linux-androideabi/27/libc.so",
+      "bytes": 145992,
+      "sha256": "264ba0eb847501db487ffcfb87e505aabc5628fdb197f9d9168bebb032609c9b"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/arm-linux-androideabi/27/libdl.so",
+      "bytes": 4656,
+      "sha256": "76e1e86566f95c04e73606e84c8991c96feb3a5937570cda089379ef93fe6d3f"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/arm-linux-androideabi/27/libm.so",
+      "bytes": 30976,
+      "sha256": "e07cbecc3865e247b26fc5ac4a6a5915debb0ba75c7a2fc54bee5fa64022a277"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/arm-linux-androideabi/27/libaaudio.so",
+      "bytes": 9700,
+      "sha256": "f04ac0fc3892fe3d6eca68ec98c7625d4a8dbd2b1eb605783ac77347528cdd52"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/arm-linux-androideabi/27/crtbegin_dynamic.o",
+      "bytes": 2572,
+      "sha256": "19067dcecc96ae58c9fd669c08aef64c510099c5a3917c557e29cc9c02d475ea"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/arm-linux-androideabi/27/crtend_android.o",
+      "bytes": 480,
+      "sha256": "d161f2951569046a09fb534f80f7c532d583aab9228b5c9d2ccf6f8c8fd27ec3"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.ubsan_standalone_cxx-arm-android.a",
+      "bytes": 30366,
+      "sha256": "713b03d91ca6561cfcc76ff9e15b406fb1cdab566b84c52e1d65e87a17508f7a"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.ubsan_standalone_cxx-arm-android.a.syms",
+      "bytes": 18,
+      "sha256": "e75012de432dd345c24acb6eecad877944bd1944fec55c9b44218ef610424fd0"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.asan-arm-android.so",
+      "bytes": 2386496,
+      "sha256": "8e80d83d956ac14b3f630e95c9cd865e37c7aa9ee206646936ac3245f12f3de7"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.asan_cxx-arm-android.a",
+      "bytes": 61048,
+      "sha256": "02fa7723b3e0f214ee3d43c395fd74c658d92cdb096007c7bfaf7045c8118898"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.ubsan_minimal-arm-android.a",
+      "bytes": 50674,
+      "sha256": "152e55f8cff73706e582481ced9c094e2ef62526d655e2357605323a1c4c23f3"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.asan-preinit-arm-android.a",
+      "bytes": 1242,
+      "sha256": "cddd8fd79afbe9ac42096ec10c32585916f3e06b569724850f1dcc6da3328370"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.ubsan_standalone-arm-android.a",
+      "bytes": 1534298,
+      "sha256": "2303b970ceecf02d8517142078eba727a85da9da9e5ea0b857479185f4eba24e"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.profile-arm-android.a",
+      "bytes": 142114,
+      "sha256": "d062a18554dad47d056072424f1de275bf94babdfb33f1523203ba70189f7744"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.lsan-arm-android.a",
+      "bytes": 1600734,
+      "sha256": "db2582e8b309db09d1c7bf03e17a16c885dc997aabb803ce1b5fe4953f7d8ab5"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.ubsan_standalone-arm-android.so",
+      "bytes": 793084,
+      "sha256": "33687ad0e6ddde6d3672badb52cead7c977c731e90e5e58b13b9e2e7e780ea7e"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.asan_cxx-arm-android.a.syms",
+      "bytes": 463,
+      "sha256": "0a164b38591cac268ba3a88abb5e7b28bc5c8b55300cb41b516b9afff094ef8b"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.fuzzer_no_main-arm-android.a",
+      "bytes": 3598038,
+      "sha256": "c314aee1f01b29cc4dbc2b3ae33c34366cc0d533db3b54e426e465b8b0d2fd67"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.ubsan_minimal-arm-android.so",
+      "bytes": 32196,
+      "sha256": "254e6fe9ab4cb63f0d745338690f63d745ce4280a0f764409c4e15454a418a52"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.stats_client-arm-android.a",
+      "bytes": 5366,
+      "sha256": "f493b8cc6aed983a5d7a4f7f3d08cc628356a5dd978e71a538c057fb881ab47c"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.stats-arm-android.a",
+      "bytes": 1325026,
+      "sha256": "e925dd306561db3a556711260afb2e26aa9980cb0c6207b85a131fe52ea29e84"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.ubsan_minimal-arm-android.a.syms",
+      "bytes": 18,
+      "sha256": "e75012de432dd345c24acb6eecad877944bd1944fec55c9b44218ef610424fd0"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.builtins-arm-android.a",
+      "bytes": 226830,
+      "sha256": "9208011b83409829d4d0cbce16b89bb314032fcf183e45475163d525d1cd9615"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.fuzzer-arm-android.a",
+      "bytes": 3598766,
+      "sha256": "e77ec92a84ac29f78923da59daf919470a4f51a51f512cfb3f172645d20a3556"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.asan-arm-android.a",
+      "bytes": 4255706,
+      "sha256": "65bbba686daf65dcd21a4d5431ed8621d8c8934e68913fae493b75e56eae8d0f"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/liborc_rt-arm-android.a",
+      "bytes": 482650,
+      "sha256": "6c12550da9d324208c9574738c038b972384104191f912370c21ee8f45f2f654"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.asan_static-arm-android.a",
+      "bytes": 6996,
+      "sha256": "7cb7133382ae6ee3d3fffec421eb4e515c0faece8ff4b4ffc8dbfaf09b806c4d"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.ubsan_standalone-arm-android.a.syms",
+      "bytes": 1599,
+      "sha256": "8ca28f25cf1cdd53f012f5877aa61e461501c99cada899788514e88a6da19c74"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.fuzzer_interceptors-arm-android.a",
+      "bytes": 15532,
+      "sha256": "88260978dcdf1f9b06a12b9f467f693c8c49b75be23afd53e56fa94d78463451"
+    },
+    {
+      "path": "toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/18/lib/linux/libclang_rt.asan-arm-android.a.syms",
+      "bytes": 62134,
+      "sha256": "45a6c8c050895b451fcf4a3c06b0fc3a54000da90c46e5f29e7c1eb0cc034413"
+    }
+  ]
+}

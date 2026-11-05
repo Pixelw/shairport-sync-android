@@ -1,0 +1,25 @@
+// LX04与Zephyr组合的听感校正配置；非全局默认，完整App兼容与客观声学未验收。
+// 2026-11-05用户确认-20ms听不出回音；没有客观声学毫秒级测量。
+// 此校正仅作为可选示例，不是全局默认值。
+general = {
+  name = "LX04 AirPlay2";
+  service_type = "airplay2";
+  output_backend = "aaudio";
+  mdns_backend = "dns-sd";
+  // 缩小软件衰减范围，让低百分比更容易听见；最高增益与静音语义不变。
+  volume_control_profile = "flat";
+  volume_range_db = 30;
+  // 配合12000帧共享缓冲，增加网络播放队列余量。
+  audio_backend_buffer_desired_length_in_seconds = 0.35;
+  // 仅此组合：用上游既有锚点偏移让LX04时序提前20ms。
+  audio_backend_latency_offset_in_seconds = -0.020;
+};
+
+// 与程序缺省值一致；可省略整个diagnostics组。
+diagnostics = {
+  log_verbosity = 1;
+  statistics = "yes";
+  log_show_time_since_startup = "no";
+  log_show_time_since_last_message = "no";
+  log_show_file_and_line = "yes";
+};

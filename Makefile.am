@@ -43,7 +43,7 @@ shairport_sync_SOURCES = shairport.c bonjour_strings.c mdns.c common.c rtp.c \
   utilities/rtsp_message_utilities.c \
   utilities/string_utilities.c \
   utilities/general_utilities.c \
-  utilities/exit.c
+  utilities/exit.c audio_aaudio.c android/port/worker.c android/port/stop_token.c android/port/clock_map.c android/port/lx_log.c android/port/smi_file.c android/port/ipc_channel.c
 
 if USE_REMOTE_CONTROL
 shairport_sync_SOURCES +=   remote/remote.c
@@ -381,3 +381,9 @@ if INSTALL_CONFIG_FILES
 install-exec-hook: install-config-files
 
 endif
+
+# 本目标仅选择 C 源码，避免 automake 因未启用的 cpp 后端拉入 libc++。
+shairport_sync_LINK = $(CC) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
+
+# Android移植公共头；两个程序共享同一份实现和接口。
+AM_CPPFLAGS = -I$(srcdir)/android/include

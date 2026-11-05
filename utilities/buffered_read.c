@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * Buffered Read. This file is part of Shairport Sync
  * Copyright (c) Mike Brady 2025
@@ -48,7 +49,7 @@ ssize_t buffered_read(buffered_tcp_desc *descriptor, void *buf, size_t count,
 
   while ((descriptor->buffer_occupancy == 0) && (descriptor->error_code == 0) &&
          (descriptor->closed == 0)) {
-    if (pthread_cond_wait(&descriptor->not_empty_cv, &descriptor->mutex))
+    if (lx_worker_cond_wait(&descriptor->not_empty_cv, &descriptor->mutex))
       debug(1, "Error waiting for buffered read");
     else
       debug(2, "buffered_read: signalled with %zu bytes after waiting.",
@@ -100,6 +101,7 @@ void *buffered_tcp_reader(void *arg) {
   //  #include <syscall.h>
   //  debug(1, "buffered_tcp_reader PID %d", syscall(SYS_gettid));
   pthread_cleanup_push(buffered_tcp_reader_cleanup_handler, NULL);
+  lx_worker_ready();
   buffered_tcp_desc *descriptor = (buffered_tcp_desc *)arg;
 
   // listen(descriptor->sock_fd, 5); // this is done in the handle_setup_2 code to ensure it's open
@@ -109,7 +111,7 @@ void *buffered_tcp_reader(void *arg) {
   memset(&remote_addr, 0, sizeof(remote_addr));
   socklen_t addr_size = sizeof(remote_addr);
   int finished = 0;
-  int fd = accept(descriptor->sock_fd, (struct sockaddr *)&remote_addr, &addr_size);
+  int fd = lx_worker_accept(descriptor->sock_fd, (struct sockaddr *)&remote_addr, &addr_size);
   // debug(1, "buffered_tcp_reader: the client has opened a buffered audio link.");
   // intptr_t pfd = fd;
   pthread_cleanup_push(socket_cleanup, (void *)&fd);
@@ -120,7 +122,7 @@ void *buffered_tcp_reader(void *arg) {
       debug(1, "problem with mutex");
     pthread_cleanup_push(mutex_unlock, (void *)&descriptor->mutex);
     while (descriptor->buffer_occupancy == descriptor->buffer_max_size) {
-      if (pthread_cond_wait(&descriptor->not_full_cv, &descriptor->mutex))
+      if (lx_worker_cond_wait(&descriptor->not_full_cv, &descriptor->mutex))
         debug(1, "Error waiting for not_full_cv");
     }
     pthread_cleanup_pop(1); // release the mutex
@@ -147,7 +149,7 @@ void *buffered_tcp_reader(void *arg) {
     // do the read
     if (descriptor->buffer_occupancy == 0)
       debug(4, "recv of up to %zd bytes with an buffer empty.", bytes_to_request);
-    nread = recv(fd, descriptor->eoq, bytes_to_request, 0);
+    nread = lx_worker_recv(fd, descriptor->eoq, bytes_to_request, 0);
     // debug(1, "Received %zu bytes for a buffer size of %zd bytes.",nread, descriptor->buffer_occupancy + nread);
     if (pthread_mutex_lock(&descriptor->mutex) != 0)
       debug(1, "problem with not empty mutex");
@@ -177,7 +179,7 @@ void *buffered_tcp_reader(void *arg) {
       have_time_to_sleep = 1;
     pthread_cleanup_pop(1); // release the mutex
     if (have_time_to_sleep)
-      usleep(10000); // give other threads a chance to run...
+      lx_worker_usleep(10000); // give other threads a chance to run...
   } while (finished == 0);
 
   debug(2, "Buffered TCP Reader Thread Exit \"Normal\" Exit Begin.");

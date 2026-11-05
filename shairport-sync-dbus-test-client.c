@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * This file is part of Shairport Sync.
  * Copyright (c) Mike Brady 2019--2026
@@ -149,7 +150,7 @@ int main(int argc, char *argv[]) {
   printf("Listening on the D-Bus %s bus.\n",
          (gbus_type_selected == G_BUS_TYPE_SYSTEM) ? "system" : "session");
 
-  pthread_create(&dbus_thread, NULL, &dbus_thread_func, NULL);
+  lx_worker_create(&dbus_thread, NULL, &dbus_thread_func, NULL);
 
   ShairportSync *proxy;
   GError *error = NULL;
@@ -283,7 +284,7 @@ int main(int argc, char *argv[]) {
     g_print("Finished test. Listening for property changes...\n");
   */
   // g_main_loop_quit(loop);
-  pthread_join(dbus_thread, NULL);
+  lx_worker_join(dbus_thread, NULL);
   printf("exiting program.\n");
 
   g_object_unref(proxy);

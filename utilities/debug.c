@@ -1,3 +1,5 @@
+#include "lx_log.h"
+#include "worker.h"
 /*
 MIT License
 
@@ -32,7 +34,8 @@ SOFTWARE.
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
-#include <unistd.h> // for usleep()
+#include "exit.h"
+#include <unistd.h> // for lx_worker_usleep()
 
 static int debuglev = 0;
 int debugger_show_elapsed_time = 0;
@@ -123,7 +126,7 @@ char *generate_preliminary_string(char *buffer, size_t buffer_length, double tss
 
 void _die(const char *filename, const int linenumber, const char *format, ...) {
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   char b[1024];
   b[0] = 0;
   char *s;
@@ -146,21 +149,18 @@ void _die(const char *filename, const int linenumber, const char *format, ...) {
   vsnprintf(s, sizeof(b) - (s - b), format, args);
   va_end(args);
   // syslog(LOG_ERR, "%s", b);
-  fprintf(stderr, "%s\n", b);
-  pthread_setcancelstate(oldState, NULL);
+  lx_log_write(LX_LOG_ERROR, b);
+  lx_worker_defer(oldState, NULL);
   if (local_exit_requester != NULL) {
     local_exit_requester(EXIT_FAILURE);
-    // wait for the exit request to be honoured
-    usleep(1000000);
-    // if not, head for the hills
-    fprintf(stderr, "fatal error: exit cleanup could not be completed.\n");
-    _Exit(EXIT_FAILURE);
+    if(lx_exit_is_main())exit(EXIT_FAILURE);
+    pthread_exit(NULL);
   }
 }
 
 void _warn(const char *filename, const int linenumber, const char *format, ...) {
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   char b[1024];
   b[0] = 0;
   char *s;
@@ -183,15 +183,15 @@ void _warn(const char *filename, const int linenumber, const char *format, ...) 
   vsnprintf(s, sizeof(b) - (s - b), format, args);
   va_end(args);
   // syslog(LOG_WARNING, "%s", b);
-  fprintf(stderr, "%s\n", b);
-  pthread_setcancelstate(oldState, NULL);
+  lx_log_write(LX_LOG_WARN, b);
+  lx_worker_defer(oldState, NULL);
 }
 
 void _debug(const char *filename, const int linenumber, int level, const char *format, ...) {
   if (level > debuglev)
     return;
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   char b[1024 * 64];
   b[0] = 0;
   pthread_mutex_lock(&debug_timing_lock);
@@ -208,13 +208,13 @@ void _debug(const char *filename, const int linenumber, int level, const char *f
   vsnprintf(s, sizeof(b) - (s - b), format, args);
   va_end(args);
   // syslog(LOG_DEBUG, "%s", b);
-  fprintf(stderr, "%s\n", b);
-  pthread_setcancelstate(oldState, NULL);
+  lx_log_write(LX_LOG_DEBUG, b);
+  lx_worker_defer(oldState, NULL);
 }
 
 void _inform(const char *filename, const int linenumber, const char *format, ...) {
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   char b[1024];
   b[0] = 0;
   char *s;
@@ -236,8 +236,8 @@ void _inform(const char *filename, const int linenumber, const char *format, ...
   vsnprintf(s, sizeof(b) - (s - b), format, args);
   va_end(args);
   // syslog(LOG_INFO, "%s", b);
-  fprintf(stderr, "%s\n", b);
-  pthread_setcancelstate(oldState, NULL);
+  lx_log_write(LX_LOG_INFO, b);
+  lx_worker_defer(oldState, NULL);
 }
 
 void _debug_print_buffer(const char *thefilename, const int linenumber, int level, void *ibuf,

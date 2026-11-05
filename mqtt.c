@@ -1,3 +1,4 @@
+#include "worker.h"
 #include <ctype.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -550,8 +551,8 @@ void metadata_mqtt_queue_init() {
 }
 void metadata_mqtt_queue_stop() {
   // debug(2, "metadata stop mqtt thread.");
-  pthread_cancel(metadata_mqtt_thread);
-  pthread_join(metadata_mqtt_thread, NULL);
+  lx_worker_request_stop(metadata_mqtt_thread);
+  lx_worker_join(metadata_mqtt_thread, NULL);
   pc_queue_delete(&metadata_mqtt_queue);
   // debug(2, "metadata stop mqtt done.");
 }

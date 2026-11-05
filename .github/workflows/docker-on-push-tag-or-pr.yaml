@@ -20,8 +20,12 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 jobs:
   docker-vars:
+    # 此Android源码fork不自动发布上游Docker镜像。
+    if: github.repository == 'mikebrady/shairport-sync'
     uses: ./.github/workflows/docker-vars.yaml
   build-docker-image-and-publish:
+    # 此Android源码fork不自动发布上游Docker镜像。
+    if: github.repository == 'mikebrady/shairport-sync'
     name: Build and conditionally push docker image
     needs:
       - docker-vars

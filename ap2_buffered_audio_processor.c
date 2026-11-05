@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * AirPlay 2 Buffered Audio Processor. This file is part of Shairport Sync
  * Copyright (c) Mike Brady 2025
@@ -115,6 +116,7 @@ void *rtp_buffered_audio_processor(void *arg) {
   conn->ap2_immediate_flush_requested = 0;
 
   pthread_cleanup_push(rtp_buffered_audio_cleanup_handler, arg);
+  lx_worker_ready();
 
   pthread_t *buffered_reader_thread = malloc(sizeof(pthread_t));
   if (buffered_reader_thread == NULL)
@@ -212,7 +214,7 @@ void *rtp_buffered_audio_processor(void *arg) {
 
   // wait until our timing information is valid
   while (have_ptp_timing_information(conn) == 0)
-    usleep(1000);
+    lx_worker_usleep(1000);
 
   reset_buffer(conn); // in case there is any garbage in the player
 
@@ -773,12 +775,12 @@ void *rtp_buffered_audio_processor(void *arg) {
                     seq_no, 1.0 * lead_time * 1E-9, config.audio_decoded_buffer_desired_length);
               very_early_packets_signalled = 1;
             }
-            usleep(((1000000 * conn->frames_per_packet) / conn->input_rate) *
+            lx_worker_usleep(((1000000 * conn->frames_per_packet) / conn->input_rate) *
                    2); // wait for approximately the length of two packets
           }
         } else {
           debug(4, "just you wait, Henry Higgins, without valid timing information...");
-          usleep(20000); // just you wait, Henry Higgins...
+          lx_worker_usleep(20000); // just you wait, Henry Higgins...
         }
       }
     }

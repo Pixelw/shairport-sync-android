@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * Apple RTP protocol handler. This file is part of Shairport.
  * Copyright (c) James Laird 2013
@@ -181,6 +182,7 @@ void *rtp_audio_receiver(void *arg) {
   //  #include <syscall.h>
   //  debug(1, "rtp_audio_receiver PID %d", syscall(SYS_gettid));
   pthread_cleanup_push(rtp_audio_receiver_cleanup_handler, arg);
+  lx_worker_ready();
   rtsp_conn_info *conn = (rtsp_conn_info *)arg;
 
   int32_t last_seqno = -1;
@@ -198,7 +200,7 @@ void *rtp_audio_receiver(void *arg) {
 
   ssize_t nread;
   while (1) {
-    nread = recv(conn->audio_socket, packet, sizeof(packet), 0);
+    nread = lx_worker_recv(conn->audio_socket, packet, sizeof(packet), 0);
 
     uint64_t local_time_now_ns = get_absolute_time_in_ns();
     if (time_of_previous_packet_ns) {
@@ -313,6 +315,7 @@ void *rtp_control_receiver(void *arg) {
   //  #include <syscall.h>
   //  debug(1, "rtp_control_receiver PID %d", syscall(SYS_gettid));
   pthread_cleanup_push(rtp_control_handler_cleanup_handler, arg);
+  lx_worker_ready();
   rtsp_conn_info *conn = (rtsp_conn_info *)arg;
 
   conn->anchor_rtptime = 0; // nothing valid received yet
@@ -322,7 +325,7 @@ void *rtp_control_receiver(void *arg) {
   uint32_t sync_rtp_timestamp;
   ssize_t nread;
   while (1) {
-    nread = recv(conn->control_socket, packet, sizeof(packet), 0);
+    nread = lx_worker_recv(conn->control_socket, packet, sizeof(packet), 0);
     if (nread >= 0) {
       if ((config.diagnostic_drop_packet_fraction == 0.0) ||
           (drand48() > config.diagnostic_drop_packet_fraction)) {
@@ -583,6 +586,7 @@ void *rtp_timing_sender(void *arg) {
   //  #include <syscall.h>
   //  debug(1, "rtp_timing_sender PID %d", syscall(SYS_gettid));
   pthread_cleanup_push(rtp_timing_sender_cleanup_handler, arg);
+  lx_worker_ready();
   rtsp_conn_info *conn = (rtsp_conn_info *)arg;
   struct timing_request {
     char leader;
@@ -642,9 +646,9 @@ void *rtp_timing_sender(void *arg) {
     request_number++;
 
     if (request_number <= 3)
-      usleep(300000); // these are thread cancellation points
+      lx_worker_usleep(300000); // these are thread cancellation points
     else
-      usleep(3000000);
+      lx_worker_usleep(3000000);
   }
   debug(3, "rtp_timing_sender thread interrupted. This should never happen.");
   pthread_cleanup_pop(0); // don't execute anything here.
@@ -679,19 +683,20 @@ void rtp_timing_receiver_cleanup_handler(void *arg) {
   }
 
   debug(4, "Cancel Timing Requester.");
-  pthread_cancel(conn->timer_requester);
+  lx_worker_request_stop(conn->timer_requester);
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   debug(4, "Join Timing Requester.");
-  pthread_join(conn->timer_requester, NULL);
+  lx_worker_join(conn->timer_requester, NULL);
   debug(4, "Timing Receiver Cleanup Successful.");
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
 }
 
 void *rtp_timing_receiver(void *arg) {
   //  #include <syscall.h>
   //  debug(1, "rtp_timing_receiver PID %d", syscall(SYS_gettid));
   pthread_cleanup_push(rtp_timing_receiver_cleanup_handler, arg);
+  lx_worker_ready();
   rtsp_conn_info *conn = (rtsp_conn_info *)arg;
 
   uint8_t packet[2048];
@@ -744,7 +749,7 @@ void *rtp_timing_receiver(void *arg) {
   // double stat_M2 = 0.0;
 
   while (1) {
-    nread = recv(conn->timing_socket, packet, sizeof(packet), 0);
+    nread = lx_worker_recv(conn->timing_socket, packet, sizeof(packet), 0);
     if (conn->udp_clock_is_initialised == 0) {
       debug(2, "AP1 clock receiver thread: initialised.");
       local_to_remote_time_jitter = 0;
@@ -1689,6 +1694,7 @@ void *rtp_ap2_control_receiver(void *arg) {
   //  #include <syscall.h>
   //  debug(1, "rtp_ap2_control_receiver PID %d", syscall(SYS_gettid));
   pthread_cleanup_push(rtp_ap2_control_handler_cleanup_handler, arg);
+  lx_worker_ready();
   rtsp_conn_info *conn = (rtsp_conn_info *)arg;
   uint8_t packet[4096];
   ssize_t nread;
@@ -1700,7 +1706,7 @@ void *rtp_ap2_control_receiver(void *arg) {
     socklen_t from_sock_addr_length = sizeof(SOCKADDR);
     memset(&from_sock_addr, 0, sizeof(SOCKADDR));
 
-    nread = recvfrom(conn->ap2_control_socket, packet, sizeof(packet), 0,
+    nread = lx_worker_recvfrom(conn->ap2_control_socket, packet, sizeof(packet), 0,
                      (struct sockaddr *)&from_sock_addr, &from_sock_addr_length);
     uint64_t time_now = get_absolute_time_in_ns();
     int64_t time_since_start = time_now - start_time;
@@ -1871,12 +1877,13 @@ void *rtp_realtime_audio_receiver(void *arg) {
   //  #include <syscall.h>
   //  debug(1, "rtp_realtime_audio_receiver PID %d", syscall(SYS_gettid));
   pthread_cleanup_push(rtp_realtime_audio_cleanup_handler, arg);
+  lx_worker_ready();
   rtsp_conn_info *conn = (rtsp_conn_info *)arg;
   uint8_t packet[4096];
   int32_t last_seqno = -1;
   ssize_t nread;
   while (1) {
-    nread = recv(conn->realtime_audio_socket, packet, sizeof(packet), 0);
+    nread = lx_worker_recv(conn->realtime_audio_socket, packet, sizeof(packet), 0);
 
     if (nread > 36) { // 36 is the 12-byte header and and 24-byte footer
       if ((config.diagnostic_drop_packet_fraction == 0.0) ||

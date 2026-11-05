@@ -1,3 +1,4 @@
+#include "worker.h"
 #include "pipe.h"
 #include "core.h"
 #include "pc_queue.h"
@@ -47,7 +48,7 @@ void metadata_process(uint32_t type, uint32_t code, char *data, uint32_t length)
   snprintf(thestring, 1024, "<item><type>%x</type><code>%x</code><length>%u</length>", type, code,
            length);
   // ret = non_blocking_write(fd, thestring, strlen(thestring));
-  ret = write(fd, thestring, strlen(thestring));
+  ret = lx_worker_write(fd, thestring, strlen(thestring));
   if (ret < 0) {
     // debug(1,"metadata_process error %d exit 1",ret);
     return;
@@ -55,7 +56,7 @@ void metadata_process(uint32_t type, uint32_t code, char *data, uint32_t length)
   if ((data != NULL) && (length > 0)) {
     snprintf(thestring, 1024, "\n<data encoding=\"base64\">\n");
     // ret = non_blocking_write(fd, thestring, strlen(thestring));
-    ret = write(fd, thestring, strlen(thestring));
+    ret = lx_worker_write(fd, thestring, strlen(thestring));
     if (ret < 0) {
       // debug(1,"metadata_process error %d exit 2",ret);
       return;
@@ -79,7 +80,7 @@ void metadata_process(uint32_t type, uint32_t code, char *data, uint32_t length)
       // debug(1,"Remaining count: %d ret: %d, outbuf_size:
       // %d.",remaining_count,ret,outbuf_size);
       // ret = non_blocking_write(fd, outbuf, outbuf_size);
-      ret = write(fd, outbuf, outbuf_size);
+      ret = lx_worker_write(fd, outbuf, outbuf_size);
       if (ret < 0) {
         // debug(1,"metadata_process error %d exit 3",ret);
         return;
@@ -89,7 +90,7 @@ void metadata_process(uint32_t type, uint32_t code, char *data, uint32_t length)
     }
     snprintf(thestring, 1024, "</data>");
     // ret = non_blocking_write(fd, thestring, strlen(thestring));
-    ret = write(fd, thestring, strlen(thestring));
+    ret = lx_worker_write(fd, thestring, strlen(thestring));
     if (ret < 0) {
       // debug(1,"metadata_process error %d exit 4",ret);
       return;
@@ -97,7 +98,7 @@ void metadata_process(uint32_t type, uint32_t code, char *data, uint32_t length)
   }
   snprintf(thestring, 1024, "</item>\n");
   // ret = non_blocking_write(fd, thestring, strlen(thestring));
-  ret = write(fd, thestring, strlen(thestring));
+  ret = lx_worker_write(fd, thestring, strlen(thestring));
   if (ret < 0) {
     // debug(1,"metadata_process error %d exit 5",ret);
     return;
@@ -172,8 +173,8 @@ void metadata_pipe_queue_init() {
 void metadata_pipe_queue_stop() {
   if (metadata_thread) {
     // debug(2, "metadata stop metadata_thread thread.");
-    pthread_cancel(metadata_thread);
-    pthread_join(metadata_thread, NULL);
+    lx_worker_request_stop(metadata_thread);
+    lx_worker_join(metadata_thread, NULL);
     pc_queue_delete(&metadata_queue);
     // debug(2, "metadata_stop finished successfully.");
   }

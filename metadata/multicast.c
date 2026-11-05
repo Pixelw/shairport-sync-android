@@ -1,3 +1,4 @@
+#include "worker.h"
 #include "multicast.h"
 #include "core.h"
 #include "pc_queue.h"
@@ -175,8 +176,8 @@ void metadata_multicast_queue_init() {
 
 void metadata_multicast_queue_stop() {
   if (metadata_multicast_thread) {
-    pthread_cancel(metadata_multicast_thread);
-    pthread_join(metadata_multicast_thread, NULL);
+    lx_worker_request_stop(metadata_multicast_thread);
+    lx_worker_join(metadata_multicast_thread, NULL);
     pc_queue_delete(&metadata_multicast_queue);
     // debug(2, "metadata stop multicast done.");
   }

@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * mDNS registration handler. This file is part of Shairport.
  * Copyright (c) Paul Lietar 2013
@@ -60,7 +61,7 @@ static int fork_execvp(const char *file, char *const argv[]) {
         execvp(file, argv);
         // If we reach this point then execve has failed.
         // Write erno's value into the pipe and exit.
-        if (write(execpipe[1], &errno, sizeof(errno)) != sizeof(errno))
+        if (lx_worker_write(execpipe[1], &errno, sizeof(errno)) != sizeof(errno))
           debug(1,
                 "Execve has failed and there was a further error writing an error message, duh.");
         die("mdns_external: execve has failed.");
@@ -69,7 +70,7 @@ static int fork_execvp(const char *file, char *const argv[]) {
 
         int childErrno;
         // Block until child closes the pipe or sends errno.
-        if (read(execpipe[0], &childErrno, sizeof(childErrno)) ==
+        if (lx_worker_read(execpipe[0], &childErrno, sizeof(childErrno)) ==
             sizeof(childErrno)) { // We received errno
           errno = childErrno;
         } else {

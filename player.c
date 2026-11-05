@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * Slave-clocked ALAC stream player. This file is part of Shairport.
  * Copyright (c) James Laird 2011, 2013
@@ -801,7 +802,7 @@ int setup_software_resampler(rtsp_conn_info *conn, ssrc_t ssrc) {
     int resampler_channels_found = 0;
 
     int oldState;
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+    lx_worker_defer(LX_STOP_DEFERRED, &oldState);
 
 #if LIBAVUTIL_VERSION_MAJOR >= 57
 
@@ -913,7 +914,7 @@ int setup_software_resampler(rtsp_conn_info *conn, ssrc_t ssrc) {
         }
       }
 
-      pthread_setcancelstate(oldState, NULL);
+      lx_worker_defer(oldState, NULL);
 
       if (output_channel_map_faulty != 0) {
         once(inform("The output device's %u-channel map is incomplete or faulty: \"%s\".",
@@ -1111,7 +1112,7 @@ void prepare_decoding_chain(rtsp_conn_info *conn, ssrc_t ssrc) {
       }
 
       int oldState;
-      pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+      lx_worker_defer(LX_STOP_DEFERRED, &oldState);
 
       // Get a decoder-dependent codec context
       conn->codec_context = avcodec_alloc_context3(conn->codec);
@@ -1163,13 +1164,13 @@ void prepare_decoding_chain(rtsp_conn_info *conn, ssrc_t ssrc) {
         // avcodec_free_context() will free extradata
 
         if (avcodec_open2(conn->codec_context, conn->codec, NULL) < 0) {
-          pthread_setcancelstate(oldState, NULL);
+          lx_worker_defer(oldState, NULL);
           die("connection %d: could not initialise the codec context", conn->connection_number);
         }
       } else {
         die("connection %d: could not allocate a codec context!", conn->connection_number);
       }
-      pthread_setcancelstate(oldState, NULL);
+      lx_worker_defer(oldState, NULL);
 
       conn->input_rate = get_ssrc_rate(ssrc);
       debug(2, "Connection %d: set conn->input_rate: %u.", conn->connection_number,
@@ -1197,7 +1198,7 @@ int64_t avframe_to_audio(rtsp_conn_info *conn, AVFrame *decoded_frame, uint8_t *
   int dst_linesize;
 
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
 
   int number_of_output_samples_expected = swr_get_out_samples(conn->swr, decoded_frame->nb_samples);
 
@@ -1304,7 +1305,7 @@ int64_t avframe_to_audio(rtsp_conn_info *conn, AVFrame *decoded_frame, uint8_t *
       conn->swr,
       RATE_FROM_ENCODED_FORMAT(
           config.current_output_configuration)); // number of frames left in the resampler
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   return response;
 }
 
@@ -1317,7 +1318,7 @@ AVFrame *block_to_avframe(rtsp_conn_info *conn, uint8_t *incoming_data,
   AVFrame *decoded_frame = NULL;
   if (incoming_data_length > 8) {
     int oldState;
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+    lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
     AVPacket *pkt = av_packet_alloc();
     if (pkt) {
       // push a deallocator -- av_packet_free(pkt);
@@ -1376,7 +1377,7 @@ AVFrame *block_to_avframe(rtsp_conn_info *conn, uint8_t *incoming_data,
     } else {
       debug(1, "Can't allocate an AVPacket!");
     }
-    pthread_setcancelstate(oldState, NULL);
+    lx_worker_defer(oldState, NULL);
   }
   return decoded_frame;
 }
@@ -2239,7 +2240,7 @@ static abuf_t *buffer_get_frame(rtsp_conn_info *conn, int resync_requested) {
                       } else {
                         debug(1, "NULL current_packet");
                       }
-                      pthread_testcancel(); // even if no packets are coming in...
+                      lx_worker_checkpoint(); // even if no packets are coming in...
                     } while ((current_packet == NULL) || (offset_to_flush_frame > 0));
                     // now remove any frames from the buffer that are before the flush frame itself.
                     int32_t frames_to_remove =
@@ -2366,7 +2367,7 @@ static abuf_t *buffer_get_frame(rtsp_conn_info *conn, int resync_requested) {
           conn->ab_read++;
           conn->last_seqno_read++; // don' let it trigger the missing packet warning...
         }
-        pthread_testcancel(); // even if no packets are coming in...
+        lx_worker_checkpoint(); // even if no packets are coming in...
       }
       int16_t buffers_available = conn->ab_write - conn->ab_read;
 
@@ -2831,7 +2832,7 @@ static abuf_t *buffer_get_frame(rtsp_conn_info *conn, int resync_requested) {
       time_of_wakeup.tv_nsec = nsec;
       // debug(1, "wait for up to %f mS or for the next packet...", time_to_wait_for_wakeup_ns *
       // 1E-6);
-      int rc = pthread_cond_timedwait(&conn->flowcontrol, &conn->ab_mutex,
+      int rc = lx_worker_cond_timedwait(&conn->flowcontrol, &conn->ab_mutex,
                                       &time_of_wakeup); // this is a pthread cancellation point
       if ((rc != 0) && (rc != ETIMEDOUT))
         // if (rc)
@@ -2844,10 +2845,10 @@ static abuf_t *buffer_get_frame(rtsp_conn_info *conn, int resync_requested) {
       struct timespec time_to_wait;
       time_to_wait.tv_sec = sec;
       time_to_wait.tv_nsec = nsec;
-      pthread_cond_timedwait_relative_np(&conn->flowcontrol, &conn->ab_mutex, &time_to_wait);
-      // pthread_cond_timedwait_relative_np() is not a cancellation point on macOS, so
-      // check here -- otherwise a pending pthread_cancel() is never acted on
-      pthread_testcancel();
+      lx_worker_cond_timedwait_relative(&conn->flowcontrol, &conn->ab_mutex, &time_to_wait);
+      // lx_worker_cond_timedwait_relative() is not a cancellation point on macOS, so
+      // check here -- otherwise a pending lx_worker_request_stop() is never acted on
+      lx_worker_checkpoint();
 #endif
     }
   } while (wait);
@@ -2920,12 +2921,12 @@ static abuf_t *buffer_get_frame(rtsp_conn_info *conn, int resync_requested) {
         // We need to get those frames of silence out of the resampler
         // so we'll pass in an empty AVFrame to flush them through
         int oldState;
-        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+        lx_worker_defer(LX_STOP_DEFERRED, &oldState);
         AVFrame *avf = av_frame_alloc();
         conn->frames_retained_in_the_resampler =
             avframe_to_audio(conn, avf, &pp, &pl, &number_of_output_frames);
         av_frame_free(&avf);
-        pthread_setcancelstate(oldState, NULL);
+        lx_worker_defer(oldState, NULL);
         curframe->data = (short *)pp;
         curframe->length = number_of_output_frames;
       }
@@ -3444,7 +3445,7 @@ void player_thread_cleanup_handler(void *arg) {
   }
 
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   debug(3, "Connection %d: player thread main loop exit via player_thread_cleanup_handler.",
         conn->connection_number);
 
@@ -3485,16 +3486,16 @@ void player_thread_cleanup_handler(void *arg) {
     debug(2, "Cancelling AP2 timing, control and audio threads...");
     if (conn->airplay_stream_type == realtime_stream) {
       debug(2, "Connection %d: Delete Realtime Audio Stream thread", conn->connection_number);
-      pthread_cancel(conn->rtp_realtime_audio_thread);
-      pthread_join(conn->rtp_realtime_audio_thread, NULL);
+      lx_worker_request_stop(conn->rtp_realtime_audio_thread);
+      lx_worker_join(conn->rtp_realtime_audio_thread, NULL);
 
     } else if (conn->airplay_stream_type == buffered_stream) {
 
       debug(3,
             "Connection %d: Delete Buffered Audio Stream thread by player_thread_cleanup_handler",
             conn->connection_number);
-      pthread_cancel(conn->rtp_buffered_audio_thread);
-      pthread_join(conn->rtp_buffered_audio_thread, NULL);
+      lx_worker_request_stop(conn->rtp_buffered_audio_thread);
+      lx_worker_join(conn->rtp_buffered_audio_thread, NULL);
       debug(3,
             "Connection %d: Deleted Buffered Audio Stream thread by player_thread_cleanup_handler",
             conn->connection_number);
@@ -3503,27 +3504,27 @@ void player_thread_cleanup_handler(void *arg) {
     }
 
     debug(2, "Connection %d: Delete AirPlay 2 Control thread", conn->connection_number);
-    pthread_cancel(conn->rtp_ap2_control_thread);
-    pthread_join(conn->rtp_ap2_control_thread, NULL);
+    lx_worker_request_stop(conn->rtp_ap2_control_thread);
+    lx_worker_join(conn->rtp_ap2_control_thread, NULL);
   } else {
     debug(2, "Cancelling AP1-compatible timing, control and audio threads...");
 #else
   debug(2, "Cancelling AP1 timing, control and audio threads...");
 #endif
     debug(4, "Cancel timing thread.");
-    pthread_cancel(conn->rtp_timing_thread);
+    lx_worker_request_stop(conn->rtp_timing_thread);
     debug(4, "Join timing thread.");
-    pthread_join(conn->rtp_timing_thread, NULL);
+    lx_worker_join(conn->rtp_timing_thread, NULL);
     debug(4, "Timing thread terminated.");
     debug(4, "Cancel control thread.");
-    pthread_cancel(conn->rtp_control_thread);
+    lx_worker_request_stop(conn->rtp_control_thread);
     debug(4, "Join control thread.");
-    pthread_join(conn->rtp_control_thread, NULL);
+    lx_worker_join(conn->rtp_control_thread, NULL);
     debug(4, "Control thread terminated.");
     debug(4, "Cancel audio thread.");
-    pthread_cancel(conn->rtp_audio_thread);
+    lx_worker_request_stop(conn->rtp_audio_thread);
     debug(4, "Join audio thread.");
-    pthread_join(conn->rtp_audio_thread, NULL);
+    lx_worker_join(conn->rtp_audio_thread, NULL);
     debug(4, "Audio thread terminated.");
 
 #ifdef CONFIG_AIRPLAY_2
@@ -3577,7 +3578,7 @@ void player_thread_cleanup_handler(void *arg) {
   conn->dctx = PSA_KEY_ID_NULL;
 #endif
 
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   debug(2, "Connection %d: player terminated.", conn->connection_number);
 }
 
@@ -3806,11 +3807,12 @@ void *player_thread_func(void *arg) {
   }
 #endif
 
-  pthread_cleanup_push(player_thread_cleanup_handler, arg); // undo what's been done so far
+  pthread_cleanup_push(player_thread_cleanup_handler, arg);
+  lx_worker_ready(); // undo what's been done so far
 
   // stop looking elsewhere for DACP stuff
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
 
 #ifdef CONFIG_DACP_CLIENT
   set_dacp_server_information(conn);
@@ -3818,7 +3820,7 @@ void *player_thread_func(void *arg) {
   mdns_dacp_monitor_set_id(conn->dacp_id);
 #endif
 
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
 
   // if not already set, set the volume to the pending_airplay_volume, if any, or otherwise to the
   // suggested volume.
@@ -3845,7 +3847,7 @@ void *player_thread_func(void *arg) {
     int this_is_the_first_frame = 0; // will be set if it is
 #endif
 
-    pthread_testcancel(); // allow a pthread_cancel request to take effect.
+    lx_worker_checkpoint(); // allow a pthread_cancel request to take effect.
 
     // if we are using the software attenuator or downsampling or mixing to mono, enable dithering
 
@@ -5525,9 +5527,9 @@ int player_stop(rtsp_conn_info *conn) {
   if (pt) {
     debug(3, "player_thread cancel...");
     conn->player_thread = NULL; // cleared _before_ cancelling of thread
-    pthread_cancel(*pt);
+    lx_worker_request_stop(*pt);
     debug(3, "player_thread join...");
-    if (pthread_join(*pt, NULL) == -1) {
+    if (lx_worker_join(*pt, NULL) == -1) {
       char errorstring[1024];
       strerror_r(errno, (char *)errorstring, sizeof(errorstring));
       debug(1, "Connection %d: error %d joining player thread: \"%s\".", conn->connection_number,

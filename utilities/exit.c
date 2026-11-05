@@ -1,72 +1,57 @@
-/*
-MIT License
-
-Copyright (c) 2023--2026 Mike Brady 4265913+mikebrady@users.noreply.github.com
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
-
-// exit_init() starts a thread what waits for the exit_request_flag to
-// be set to non-zero.
-// It then runs the standard exit(exit_status) to
-// terminate the program, running all the atexit handlers first.
-
-// exit_request() can be called from anywhere in the program
-// including a SIG handler and
-// the thread will take care of terminating the program cleanly.
-// pass in EXIT_SUCCESS or EXIT_FAILURE in the request.
-
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Pixelw and contributors
+ * See android/LICENSE for the full license text.
+ */
+/* 主线程拥有退出协调；信号处理器只设置标记并写入 self-pipe。 */
+#define _POSIX_C_SOURCE 200809L
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
 #include <pthread.h>
-#include <signal.h> // for sig_atomic_t
-#include <stdlib.h> // for EXIT_SUCCESS
-#include <string.h> // for memset
-#include <unistd.h> // for usleep
-
-#include "common.h"
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include "exit.h"
+#ifdef LX_HOST_INTEGRATION
+#include "worker.h"
+#include <assert.h>
+#include <stdio.h>
+#endif
 
-volatile sig_atomic_t exit_request_flag = 0;
-volatile sig_atomic_t exit_status = EXIT_SUCCESS;
-
-pthread_t exit_manager_thread;
-
-void *exit_manager(__attribute__((unused)) void *arg) {
-  while (exit_request_flag == 0) {
-    uint64_t last = get_absolute_time_in_ns();
-    usleep(10000);
-    if (exit_request_flag == 0) {
-      uint64_t now = get_absolute_time_in_ns();
-      if ((now - last) > (uint64_t)100000000) {
-        debug(2, "heartbeat: slept %.1f ms instead of 10.0.", (now - last) * 1E-6);
-      }
-    }
+/* 退出请求，供主循环检查；信号中只写 sig_atomic_t。 */
+volatile sig_atomic_t exit_request_flag;
+/* 请求的进程退出码。 */
+volatile sig_atomic_t exit_status;
+static int wake_fd[2]={-1,-1};
+static pthread_t main_thread;
+static void close_wakeup(void){
+#ifdef LX_HOST_INTEGRATION
+  fprintf(stderr,"LX_HOST_WORKERS=%u\n",lx_worker_count());assert(lx_worker_count()==0);
+#endif
+  for(int i=0;i<2;++i)if(wake_fd[i]>=0)close(wake_fd[i]);
+}
+/* 在主线程初始化非阻塞 self-pipe，不创建额外控制工作线程。 */
+void exit_init(void){
+  main_thread=pthread_self();
+  if(pipe(wake_fd))exit(EXIT_FAILURE);
+  for(int i=0;i<2;++i){
+    if(fcntl(wake_fd[i],F_SETFD,FD_CLOEXEC)<0 || fcntl(wake_fd[i],F_SETFL,O_NONBLOCK)<0){close_wakeup();exit(EXIT_FAILURE);}
   }
-  exit(exit_status);
-  return NULL;
+  atexit(close_wakeup);
 }
-
-void exit_init() {
-  memset(&exit_manager_thread, 0, sizeof(pthread_t));
-  named_pthread_create(&exit_manager_thread, NULL, &exit_manager, NULL, "exit_manager");
+/* 可从信号处理器调用；没有日志、锁、内存分配或工作线程停止操作。 */
+void exit_request(const int requested){
+  int saved=errno;
+  if(requested)exit_status=requested;
+  exit_request_flag=1;
+  if(wake_fd[1]>=0){char byte=1;(void)write(wake_fd[1],&byte,1);}
+  errno=saved;
 }
-
-void exit_request(const int exit_status_requested) {
-  exit_status = exit_status_requested; // EXIT_SUCCESS or EXIT_FAILURE
-  exit_request_flag = 1;               // ask for exit
+/* 仅供普通错误路径判断，不能从信号处理器调用。 */
+int lx_exit_is_main(void){return pthread_equal(main_thread,pthread_self());}
+/* 主线程等待请求后返回退出码；返回 main 前由 atexit 依次停止和 join 工作者。 */
+int lx_exit_wait(void){
+  struct pollfd fd={.fd=wake_fd[0],.events=POLLIN};
+  while(!exit_request_flag){if(poll(&fd,1,-1)<0 && errno!=EINTR){exit_status=EXIT_FAILURE;break;}}
+  return (int)exit_status;
 }

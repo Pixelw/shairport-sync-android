@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * DACP protocol handler. This file is part of Shairport Sync.
  * Copyright (c) Mike Brady 2017--2026
@@ -317,7 +318,7 @@ int dacp_send_command(const char *command, char **body, size_t *bodysize) {
                 const char *data = buffer;
                 if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv) == -1)
                   debug(1, "dacp_send_command: error %d setting receive timeout.", errno);
-                ssize_t ndata = recv(sockfd, buffer, sizeof(buffer), 0);
+                ssize_t ndata = lx_worker_recv(sockfd, buffer, sizeof(buffer), 0);
                 // debug(3, "Received %d bytes: \"%s\".", ndata, buffer);
                 if (ndata <= 0) {
                   if (ndata == -1) {
@@ -571,18 +572,18 @@ void *dacp_monitor_thread_code(__attribute__((unused)) void *na) {
         // debug(1, "dacp_monitor_thread_code wait for an event to possibly enable scan");
 
 #ifdef COMPILE_FOR_LINUX_AND_FREEBSD_AND_CYGWIN_AND_OPENBSD
-        result = pthread_cond_timedwait(&dacp_server_information_cv, &dacp_server_information_lock,
+        result = lx_worker_cond_timedwait(&dacp_server_information_cv, &dacp_server_information_lock,
                                         &time_to_wait); // this is a pthread cancellation point
         // debug(1, "result is %d, dacp_server.scan_enable is %d, time_to_wait_for_wakeup_ns is %"
         // PRId64 ".", result, dacp_server.scan_enable, time_to_wait_for_wakeup_ns);
 
 #endif
 #ifdef COMPILE_FOR_OSX
-        result = pthread_cond_timedwait_relative_np(&dacp_server_information_cv,
+        result = lx_worker_cond_timedwait_relative(&dacp_server_information_cv,
                                                     &dacp_server_information_lock, &time_to_wait);
-        // pthread_cond_timedwait_relative_np() is not a cancellation point on macOS, so
-        // check here -- otherwise a pending pthread_cancel() is never acted on
-        pthread_testcancel();
+        // lx_worker_cond_timedwait_relative() is not a cancellation point on macOS, so
+        // check here -- otherwise a pending lx_worker_request_stop() is never acted on
+        lx_worker_checkpoint();
 #endif
       }
       if (dacp_server.scan_enable == 1) {
@@ -1035,8 +1036,8 @@ void dacp_monitor_start() {
 void dacp_monitor_stop() {
   if (dacp_monitor_initialised) { // only if it's been started and initialised
     debug(2, "dacp_monitor_stop");
-    pthread_cancel(dacp_monitor_thread);
-    pthread_join(dacp_monitor_thread, NULL);
+    lx_worker_request_stop(dacp_monitor_thread);
+    lx_worker_join(dacp_monitor_thread, NULL);
     pthread_mutex_destroy(&dacp_server_information_lock);
     debug(3, "DACP Conversation Lock Mutex Destroyed");
     pthread_mutex_destroy(&dacp_conversation_lock);

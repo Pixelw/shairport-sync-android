@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * This file is part of Shairport Sync.
  * Copyright (c) Mike Brady 2019--2026
@@ -148,7 +149,7 @@ int main(int argc, char *argv[]) {
   printf("Listening on the D-Bus %s bus...\n",
          (gbus_type_selected == G_BUS_TYPE_SYSTEM) ? "system" : "session");
 
-  pthread_create(&dbus_thread, NULL, &dbus_thread_func, NULL);
+  lx_worker_create(&dbus_thread, NULL, &dbus_thread_func, NULL);
 
   GError *error1 = NULL;
   MediaPlayer2 *proxy1 = media_player2_proxy_new_for_bus_sync(
@@ -169,7 +170,7 @@ int main(int argc, char *argv[]) {
                    "MediaPlayer2Player");
 
   // g_main_loop_quit(loop);
-  pthread_join(dbus_thread, NULL);
+  lx_worker_join(dbus_thread, NULL);
   printf("exiting program.\n");
 
   g_object_unref(proxy1);

@@ -1,3 +1,4 @@
+#include "worker.h"
 // This file is the concatenation of mdnsd.c and mdns.c
 // from tinysvcmdns with minor modifications
 // The code was taken from https://bitbucket.org/geekman/tinysvcmdns at revision e34b562
@@ -1446,7 +1447,7 @@ int create_pipe(int handles[2]) {
     closesocket(sock);
     return -1;
   }
-  if ((handles[0] = accept(sock, (struct sockaddr *)&serv_addr, &len)) == INVALID_SOCKET) {
+  if ((handles[0] = lx_worker_accept(sock, (struct sockaddr *)&serv_addr, &len)) == INVALID_SOCKET) {
     closesocket((SOCKET)handles[1]);
     handles[1] = INVALID_SOCKET;
     closesocket(sock);
@@ -1461,13 +1462,13 @@ int create_pipe(int handles[2]) {
 
 int read_pipe(int s, char *buf, int len) {
 #ifdef _WIN32
-  int ret = recv(s, buf, len, 0);
+  int ret = lx_worker_recv(s, buf, len, 0);
   if (ret < 0 && WSAGetLastError() == WSAECONNRESET) {
     ret = 0;
   }
   return ret;
 #else
-  return read(s, buf, len);
+  return lx_worker_read(s, buf, len);
 #endif
 }
 
@@ -1475,7 +1476,7 @@ int write_pipe(int s, char *buf, int len) {
 #ifdef _WIN32
   return send(s, buf, len, 0);
 #else
-  return write(s, buf, len);
+  return lx_worker_write(s, buf, len);
 #endif
 }
 
@@ -1509,7 +1510,7 @@ void *main_loop(struct mdnsd *svr) {
     FD_ZERO(&sockfd_set);
     FD_SET(svr->sockfd, &sockfd_set);
     FD_SET(svr->notify_pipe[0], &sockfd_set);
-    select(max_fd + 1, &sockfd_set, NULL, NULL, NULL);
+    lx_worker_select(max_fd + 1, &sockfd_set, NULL, NULL, NULL);
 
     if (FD_ISSET(svr->notify_pipe[0], &sockfd_set)) {
       // flush the notify_pipe
@@ -1518,10 +1519,10 @@ void *main_loop(struct mdnsd *svr) {
       struct sockaddr_in fromaddr;
       socklen_t sockaddr_size = sizeof(struct sockaddr_in);
 
-      ssize_t recvsize = recvfrom(svr->sockfd, pkt_buffer, PACKET_SIZE, 0,
+      ssize_t recvsize = lx_worker_recvfrom(svr->sockfd, pkt_buffer, PACKET_SIZE, 0,
                                   (struct sockaddr *)&fromaddr, &sockaddr_size);
       if (recvsize < 0) {
-        log_message(LOG_ERR, "recv(): %m");
+        log_message(LOG_ERR, "lx_worker_recv(): %m");
         // recvsize is passed to mdns_parse_pkt() as a size_t; a negative value
         // would become huge and defeat every bounds check. Skip this datagram.
         continue;
@@ -1772,7 +1773,7 @@ void mdnsd_stop(struct mdnsd *s) {
   write_pipe(s->notify_pipe[1], ".", 1);
 
   while (s->stop_flag != 2)
-    select(0, NULL, NULL, NULL, &tv);
+    lx_worker_select(0, NULL, NULL, NULL, &tv);
 
   close_pipe(&s->notify_pipe[0]);
   close_pipe(&s->notify_pipe[1]);

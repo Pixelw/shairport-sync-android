@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * pipe output driver. This file is part of Shairport.
  * Copyright (c) James Laird 2013
@@ -84,7 +85,7 @@ static int play(void *buf, int samples, __attribute__((unused)) int sample_type,
     // int rc = non_blocking_write(fd, buf, samples * 4);
     if (bytes_per_frame == 0)
       debug(1, "pipe: bytes per frame not initialised before play()!");
-    int rc = write(fd, buf, samples * bytes_per_frame);
+    int rc = lx_worker_write(fd, buf, samples * bytes_per_frame);
     if ((rc < 0) && (errno != EPIPE) && (warned == 0)) {
       strerror_r(errno, (char *)errorstring, 1024);
       debug(1, "error %d writing to the pipe named \"%s\": \"%s\".", errno, pipename, errorstring);

@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * libalsa output driver. This file is part of Shairport.
  * Copyright (c) Muffinman, Skaman 2013
@@ -1032,11 +1033,11 @@ static int actual_open_alsa_device() {
 static int open_alsa_device() {
   int result;
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
   result = actual_open_alsa_device();
   if (result != 0)
     debug(1, "Error in open_alsa_device: %d.", result);
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   return result;
 }
 
@@ -1052,7 +1053,7 @@ static int prepare_mixer() {
   } else {
     debug(2, "alsa: hardware mixer prepare");
     int oldState;
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+    lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
 
     if (alsa_mix_dev == NULL)
       alsa_mix_dev = hw_alsa_out_dev;
@@ -1147,7 +1148,7 @@ static int prepare_mixer() {
     }
     pthread_mutex_unlock(&alsa_mixer_mutex); // release the mutex
     pthread_cleanup_pop(0);
-    pthread_setcancelstate(oldState, NULL);
+    lx_worker_defer(oldState, NULL);
   }
   return response;
 }
@@ -1590,7 +1591,7 @@ static char *get_channel_map_str() {
 static int configure(int32_t requested_encoded_format, char **channel_map) {
   int response = 0;
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
   pthread_mutex_lock_and_cleanup_push(&alsa_mutex);
   if (current_encoded_output_format != requested_encoded_format) {
     if (current_encoded_output_format == 0)
@@ -1610,7 +1611,7 @@ static int configure(int32_t requested_encoded_format, char **channel_map) {
   }
   pthread_mutex_unlock(&alsa_mutex);
   pthread_cleanup_pop(0);
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   if (response != 0)
     debug(1, "alsa: could not open the output device with configuration %s",
           short_format_description(requested_encoded_format));
@@ -1619,7 +1620,7 @@ static int configure(int32_t requested_encoded_format, char **channel_map) {
 
 static void deinit(void) {
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
   debug(2, "audio_alsa deinit called.");
   pthread_mutex_lock_and_cleanup_push(&alsa_mutex);
   if (alsa_handle != NULL) {
@@ -1630,11 +1631,11 @@ static void deinit(void) {
   }
   pthread_cleanup_pop(1); // release the mutex
   debug(2, "Cancel buffer monitor thread.");
-  pthread_cancel(alsa_buffer_monitor_thread);
+  lx_worker_request_stop(alsa_buffer_monitor_thread);
   debug(2, "Join buffer monitor thread.");
-  pthread_join(alsa_buffer_monitor_thread, NULL);
+  lx_worker_join(alsa_buffer_monitor_thread, NULL);
   debug(2, "Joined buffer monitor thread.");
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   if (hw_alsa_out_dev != NULL)
     free(hw_alsa_out_dev);
 }
@@ -1651,7 +1652,7 @@ static int prepare() {
 static int set_mute_state() {
   int response = 1; // some problem expected, e.g. no mixer or not allowed to use it or disconnected
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
   pthread_mutex_lock_and_cleanup_push(&alsa_mixer_mutex);
   if ((alsa_backend_state != abm_disconnected) && (config.alsa_use_hardware_mute == 1) &&
       (open_mixer() == 0)) {
@@ -1681,7 +1682,7 @@ static int set_mute_state() {
   }
   pthread_mutex_unlock(&alsa_mixer_mutex); // release the mutex
   pthread_cleanup_pop(0);                  // release the mutex
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   return response;
 }
 
@@ -1904,14 +1905,14 @@ static int delay(long *the_delay) {
 
   snd_pcm_state_t state;
 
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
   pthread_mutex_lock_and_cleanup_push(&alsa_mutex);
 
   ret = delay_and_status(&state, &my_delay, NULL);
 
   pthread_mutex_unlock(&alsa_mutex);
   pthread_cleanup_pop(0);
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
 
   if (the_delay != NULL)   // can't imagine why this might happen
     *the_delay = my_delay; // note: snd_pcm_sframes_t is a long
@@ -1935,7 +1936,7 @@ static int stats(uint64_t *raw_measurement_time, uint64_t *corrected_measurement
   snd_pcm_state_t state;
   snd_pcm_sframes_t my_delay = 0; // this initialisation is to silence a clang warning
 
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
   pthread_mutex_lock_and_cleanup_push(&alsa_mutex);
 
   if (alsa_handle == NULL) {
@@ -1955,7 +1956,7 @@ static int stats(uint64_t *raw_measurement_time, uint64_t *corrected_measurement
     *frames_sent_to_dac = frames_sent_for_playing;
   pthread_mutex_unlock(&alsa_mutex);
   pthread_cleanup_pop(0);
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   uint64_t hd = my_delay; // note: snd_pcm_sframes_t is a long
   *the_delay = hd;
   // if (ret != 0)
@@ -1969,7 +1970,7 @@ static int do_play(void *buf, int samples) {
   if ((samples != 0) && (buf != NULL)) {
 
     int oldState;
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+    lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
 
     snd_pcm_state_t state;
     snd_pcm_sframes_t my_delay;
@@ -1990,7 +1991,7 @@ static int do_play(void *buf, int samples) {
       ret = alsa_pcm_write(alsa_handle, buf, samples);
       if (ret == -EIO) {
         debug(1, "alsa: I/O Error.");
-        usleep(20000); // give it a breather...
+        lx_worker_usleep(20000); // give it a breather...
       }
       if (ret > 0)
         frames_sent_for_playing += ret; // this is the number of frames accepted
@@ -2029,7 +2030,7 @@ static int do_play(void *buf, int samples) {
         }
       }
     }
-    pthread_setcancelstate(oldState, NULL);
+    lx_worker_defer(oldState, NULL);
     if (ret < 0) {
       char errorstring[1024];
       strerror_r(-ret, (char *)errorstring, sizeof(errorstring));
@@ -2083,7 +2084,7 @@ static int do_close() {
     debug(3, "alsa: do_close() -- closing the output device");
     if ((derr = snd_pcm_drop(alsa_handle)))
       debug(1, "Error %d (\"%s\") dropping output device.", derr, snd_strerror(derr));
-    usleep(20000); // wait for the hardware to do its trick. BTW, this make the function pthread
+    lx_worker_usleep(20000); // wait for the hardware to do its trick. BTW, this make the function pthread
                    // cancellable
     if ((derr = snd_pcm_hw_free(alsa_handle)))
       debug(1, "Error %d (\"%s\") freeing the output device hardware.", derr, snd_strerror(derr));
@@ -2191,7 +2192,7 @@ static void do_volume(double vol) { // caller is assumed to have the alsa_mutex 
                                     // using this function
   debug(3, "Setting volume db to %f.", vol);
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
   set_volume = vol;
   pthread_mutex_lock_and_cleanup_push(&alsa_mixer_mutex);
   if (volume_set_request && (open_mixer() == 0)) {
@@ -2225,7 +2226,7 @@ static void do_volume(double vol) { // caller is assumed to have the alsa_mutex 
   }
   pthread_mutex_unlock(&alsa_mixer_mutex);
   pthread_cleanup_pop(0); // release the mutex
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
 }
 
 static void volume(double vol) {
@@ -2259,13 +2260,13 @@ static void *alsa_buffer_monitor_thread_code(__attribute__((unused)) void *arg) 
   int okb = -1;
 
   while (config.keep_dac_busy == 0)
-    usleep(10000);
+    lx_worker_usleep(10000);
 
   debug(1, "alsa: get initial disable standby parameters for rate/channels: %u/%u.",
         disable_standby_mode_default_rate, disable_standby_mode_default_channels);
   while (get_permissible_configuration_settings() != 0) {
     debug(1, "wait 50 ms to check again for success");
-    usleep(50000);
+    lx_worker_usleep(50000);
   }
 
   current_encoded_output_format =
@@ -2405,7 +2406,7 @@ static void *alsa_buffer_monitor_thread_code(__attribute__((unused)) void *arg) 
     pthread_mutex_unlock(&alsa_mutex);
     pthread_cleanup_pop(0); // release the mutex
     uint64_t tsb = get_absolute_time_in_ns();
-    usleep(sleep_time_us); // has a cancellation point in it
+    lx_worker_usleep(sleep_time_us); // has a cancellation point in it
     sleep_time_actual_ns = get_absolute_time_in_ns() - tsb;
   }
   pthread_exit(NULL);

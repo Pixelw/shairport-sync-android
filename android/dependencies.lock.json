@@ -1,0 +1,130 @@
+{
+  "make": {
+    "version": "4.4.1",
+    "url": "https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz",
+    "file": "make-4.4.1.archive",
+    "bytes": 2348200,
+    "sha256": "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "autoconf": {
+    "version": "2.72",
+    "url": "https://ftp.gnu.org/gnu/autoconf/autoconf-2.72.tar.gz",
+    "file": "autoconf-2.72.archive",
+    "bytes": 2143794,
+    "sha256": "afb181a76e1ee72832f6581c0eddf8df032b83e2e0239ef79ebedc4467d92d6e",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "automake": {
+    "version": "1.17",
+    "url": "https://ftp.gnu.org/gnu/automake/automake-1.17.tar.gz",
+    "file": "automake-1.17.archive",
+    "bytes": 2451070,
+    "sha256": "397767d4db3018dd4440825b60c64258b636eaf6bf99ac8b0897f06c89310acd",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "libtool": {
+    "version": "2.5.4",
+    "url": "https://ftp.gnu.org/gnu/libtool/libtool-2.5.4.tar.gz",
+    "file": "libtool-2.5.4.archive",
+    "bytes": 2016535,
+    "sha256": "da8ebb2ce4dcf46b90098daf962cffa68f4b4f62ea60f798d0ef12929ede6adf",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "pkgconf": {
+    "version": "2.5.1",
+    "url": "https://distfiles.ariadne.space/pkgconf/pkgconf-2.5.1.tar.xz",
+    "file": "pkgconf-2.5.1.archive",
+    "bytes": 328064,
+    "sha256": "cd05c9589b9f86ecf044c10a2269822bc9eb001eced2582cfffd658b0a50c243",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "openssl": {
+    "version": "3.5.9",
+    "url": "https://codeload.github.com/openssl/openssl/tar.gz/refs/tags/openssl-3.5.9",
+    "file": "openssl-3.5.9.archive",
+    "bytes": 53459568,
+    "sha256": "796831ec533bf41998eaaee9d632d921b8a69f57394fa4086ff01a941113d26d",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "popt": {
+    "version": "1.19",
+    "url": "https://ftp.osuosl.org/pub/rpm/popt/releases/popt-1.x/popt-1.19.tar.gz",
+    "file": "popt-1.19.archive",
+    "bytes": 596676,
+    "sha256": "c25a4838fc8e4c1c8aacb8bd620edb3084a3d63bf8987fdad3ca2758c63240f9",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "libconfig": {
+    "version": "1.8.1",
+    "url": "https://codeload.github.com/hyperrealm/libconfig/tar.gz/refs/tags/v1.8.1",
+    "file": "libconfig-1.8.1.archive",
+    "bytes": 1726710,
+    "sha256": "e95798d2992a66ecd547ce3651d7e10642ff2211427c43a7238186ff4c372627",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "libplist": {
+    "version": "2.7.0",
+    "url": "https://codeload.github.com/libimobiledevice/libplist/tar.gz/refs/tags/2.7.0",
+    "file": "libplist-2.7.0.archive",
+    "bytes": 225681,
+    "sha256": "66fa17a29270cb25ceaf189430ea38037c066652c2989b58d7ef6120b1a208d3",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "libsodium": {
+    "version": "1.0.20",
+    "url": "https://download.libsodium.org/libsodium/releases/libsodium-1.0.20.tar.gz",
+    "file": "libsodium-1.0.20.archive",
+    "bytes": 1925167,
+    "sha256": "ebb65ef6ca439333c2bb41a0c1990587288da07f6c7fd07cb3a18cc18d30ce19",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "libgpg-error": {
+    "version": "1.61",
+    "url": "https://gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-1.61.tar.bz2",
+    "file": "libgpg-error-1.61.archive",
+    "bytes": 1124751,
+    "sha256": "7a85413f2bc354f4f8aa832b718af122e48965e9e0eb9012ee659c13c6385c93",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "libgcrypt": {
+    "version": "1.12.4",
+    "url": "https://gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-1.12.4.tar.bz2",
+    "file": "libgcrypt-1.12.4.archive",
+    "bytes": 4473329,
+    "sha256": "d77f68f48879510e79a2f65977ccc68981781ea0923e5bdffac2a193ea3d660e",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "util-linux": {
+    "version": "2.41.2",
+    "url": "https://mirrors.edge.kernel.org/pub/linux/utils/util-linux/v2.41/util-linux-2.41.2.tar.xz",
+    "file": "util-linux-2.41.2.archive",
+    "bytes": 9612488,
+    "sha256": "6062a1d89b571a61932e6fc0211f36060c4183568b81ee866cf363bce9f6583e",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "ffmpeg": {
+    "version": "7.1.5",
+    "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/refs/tags/n7.1.5",
+    "file": "ffmpeg-7.1.5.archive",
+    "bytes": 15931570,
+    "sha256": "e3963a50831c985933e1a625ed566ec4c7adb5c012c34fa9f84438e1d61bdacc",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "mdnsresponder": {
+    "version": "2200.140.11",
+    "url": "https://codeload.github.com/apple-oss-distributions/mDNSResponder/tar.gz/refs/tags/mDNSResponder-2200.140.11",
+    "file": "mdnsresponder-2200.140.11.archive",
+    "bytes": 3277831,
+    "sha256": "f52963497e8baf650e6640fb5769ffbad7c6e45eea833dec2a0ca86a3ca55928",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  },
+  "m4": {
+    "version": "1.4.20",
+    "url": "https://ftp.gnu.org/gnu/m4/m4-1.4.20.tar.gz",
+    "file": "m4-1.4.20.archive",
+    "bytes": 3501556,
+    "sha256": "6ac4fc31ce440debe63987c2ebbf9d7b6634e67a7c3279257dc7361de8bdb3ef",
+    "verification": "HTTPS official project release/tag; local SHA256 pin, not independent signature verification."
+  }
+}

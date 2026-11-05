@@ -13,16 +13,16 @@ AC_SUBST([HOME], [$HOME])
 # Derived from the Avahi configure.ac file
 # Specifying the OS type, defaulting to linux.
 #
-AC_ARG_WITH(os, AS_HELP_STRING([--with-os=OSType],[Specify the distribution to target: One of linux, freebsd, openbsd or darwin]))
+AC_ARG_WITH(os, AS_HELP_STRING([--with-os=OSType],[Specify the distribution to target: One of android, linux, freebsd, openbsd or darwin]))
 if test "z$with_os" = "z"; then
   with_os="linux"
 fi
 with_os=`echo ${with_os} | tr '[[:upper:]]' '[[:lower:]]' `
 case "x${with_os}" in
-xlinux|xfreebsd|xopenbsd|xdarwin)
+xandroid|xlinux|xfreebsd|xopenbsd|xdarwin)
   ;;
 *)
-  AC_MSG_ERROR([--with-os=<arg> argument must be one of linux, freebsd, openbsd or darwin])
+  AC_MSG_ERROR([--with-os=<arg> argument must be one of android, linux, freebsd, openbsd or darwin])
   ;;
 esac
 
@@ -69,7 +69,7 @@ AC_ARG_WITH([pkg_config],[AS_HELP_STRING([--with-pkg-config],[use pkg-config to 
 ##### The following check for the pthreads library doesn't put the compiler into the correct pthread mode
 ##### so we add the -pthread compilation flag in AMFLAGS in the Makefile.am as well.
 
-AC_CHECK_LIB([pthread],[pthread_create], , AC_MSG_ERROR(pthread library needed))
+AC_SEARCH_LIBS([pthread_create], [pthread], [], AC_MSG_ERROR(pthread support needed))
 AC_CHECK_LIB([m],[exp], , AC_MSG_ERROR(maths library needed))
 
 if  test "x${with_pkg_config}" = xyes ; then

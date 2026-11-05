@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * Producer--consumer queue and access methods.
  * This file is part of Shairport Sync.
@@ -94,7 +95,7 @@ int pc_queue_add_item(pc_queue *the_queue, const void *the_stuff, int block) {
     // irrespective of the block flag.
     /*
                 while (the_queue->count == the_queue->capacity) {
-                        rc = pthread_cond_wait(&the_queue->pc_queue_item_removed_signal,
+                        rc = lx_worker_cond_wait(&the_queue->pc_queue_item_removed_signal,
        &the_queue->pc_queue_lock); if (rc) debug(1, "Error waiting for item to be removed");
                 }
                 */
@@ -142,7 +143,7 @@ int pc_queue_get_item(pc_queue *the_queue, void *the_stuff) {
       debug(1, "metadata queue \"%s\": error locking for pc_queue_get_item", the_queue->name);
     pthread_cleanup_push(pc_queue_cleanup_handler, (void *)the_queue);
     while (the_queue->count == 0) {
-      rc = pthread_cond_wait(&the_queue->pc_queue_item_added_signal, &the_queue->pc_queue_lock);
+      rc = lx_worker_cond_wait(&the_queue->pc_queue_item_added_signal, &the_queue->pc_queue_lock);
       if (rc)
         debug(1, "metadata queue \"%s\": error waiting for item to be added", the_queue->name);
     }

@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * RTSP protocol handler. This file is part of Shairport Sync
  * Copyright (c) James Laird 2013
@@ -182,104 +183,57 @@ static void track_thread(rtsp_conn_info *conn) {
   pthread_mutex_unlock(&conns_lock);
 }
 
-// note: connection numbers start at 1, so an except_this_one value of zero means "all threads"
-void cancel_all_RTSP_threads(airplay_stream_c stream_category, int except_this_one) {
-  // if the stream category is unspecified_stream_category
-  // all categories are elegible for cancellation
-  // otherwise just the category itself
+/* 连接表只负责所有权转移；取出后才停止/join，避免持表锁等待清理。 */
+static rtsp_conn_info *lx_take_connection(airplay_stream_c category,int except,int number,int finished_only) {
+  rtsp_conn_info *result=NULL;
   pthread_mutex_lock(&conns_lock);
-  int i;
-  for (i = 0; i < nconns; i++) {
-    if ((conns[i] != NULL) && (conns[i]->running != 0) &&
-        (conns[i]->connection_number != except_this_one) &&
-        ((conns[i]->airplay_stream_category == stream_category) ||
-         (stream_category == unspecified_stream_category))) {
-      pthread_cancel(conns[i]->thread);
-#ifdef CONFIG_AIRPLAY_2
-      debug(2, "Connection %d from \"%s\": %s cancelled.", conns[i]->connection_number,
-            conns[i]->ap2_client_name, get_category_string(conns[i]->airplay_stream_category));
-#endif
-    }
-  }
-  for (i = 0; i < nconns; i++) {
-    if ((conns[i] != NULL) && (conns[i]->connection_number != except_this_one) &&
-        ((conns[i]->airplay_stream_category == stream_category) ||
-         (stream_category == unspecified_stream_category))) {
-      debug(2, "Connection %d: %s joining....", conns[i]->connection_number,
-            get_category_string(conns[i]->airplay_stream_category));
-      pthread_join(conns[i]->thread, NULL);
-      debug(2, "Connection %d: %s joined.", conns[i]->connection_number,
-            get_category_string(conns[i]->airplay_stream_category));
-      free(conns[i]);
-      conns[i] = NULL;
-    }
+  for(int i=0;i<nconns;++i){
+    rtsp_conn_info *c=conns[i];
+    if(!c || c->connection_number==except || pthread_equal(c->thread,pthread_self()))continue;
+    if(number && c->connection_number!=number)continue;
+    if(category!=unspecified_stream_category && c->airplay_stream_category!=category)continue;
+    if(finished_only && __atomic_load_n(&c->running,__ATOMIC_ACQUIRE))continue;
+    result=c;conns[i]=NULL;break;
   }
   pthread_mutex_unlock(&conns_lock);
+  return result;
 }
-
-int old_connection_count = -1;
-
+/* 请求并等待选定连接的所有子工作线程退出，再释放连接对象。 */
+void cancel_all_RTSP_threads(airplay_stream_c category,int except_this_one) {
+  rtsp_conn_info *conn;
+  int old;lx_worker_defer(LX_STOP_DEFERRED,&old);
+  while((conn=lx_take_connection(category,except_this_one,0,0))!=NULL){
+    lx_worker_request_stop(conn->thread);
+    lx_worker_join(conn->thread,NULL);
+    free(conn);
+  }
+  lx_worker_defer(old,NULL);
+}
+/* 抢占方释放 principal 锁后等待旧连接结束，保证新旧 player 不重叠。 */
+static void lx_join_connection(int number){
+  int old;lx_worker_defer(LX_STOP_DEFERRED,&old);
+  rtsp_conn_info *conn=lx_take_connection(unspecified_stream_category,0,number,0);
+  if(conn){lx_worker_request_stop(conn->thread);lx_worker_join(conn->thread,NULL);free(conn);}
+  lx_worker_defer(old,NULL);
+}
+int old_connection_count=-1; /* 上游调试状态，保留符号。 */
+/* 正常结束的连接也必须 join，回收停止管道和工作线程注册句柄。 */
 void cleanup_threads(void) {
-
-  void *retval;
-  int i;
-  int connection_count = 0;
-  // debug(2, "culling threads.");
-  pthread_mutex_lock(&conns_lock);
-  for (i = 0; i < nconns; i++) {
-    if ((conns[i] != NULL) && (conns[i]->running == 0)) {
-      debug(4, "found RTSP connection thread %d in a non-running state.",
-            conns[i]->connection_number);
-      pthread_join(conns[i]->thread, &retval);
-      debug(4, "Connection %d: deleted in cleanup.", conns[i]->connection_number);
-      free(conns[i]);
-      conns[i] = NULL;
-    }
-    if (conns[i] != NULL) {
-      debug(4, "Airplay Volume for connection %d is %.6f.", conns[i]->connection_number,
-            suggested_volume(conns[i]));
-      connection_count++;
-    }
+  rtsp_conn_info *conn;
+  int old;lx_worker_defer(LX_STOP_DEFERRED,&old);
+  while((conn=lx_take_connection(unspecified_stream_category,0,0,1))!=NULL){
+    lx_worker_join(conn->thread,NULL);free(conn);
   }
-  pthread_mutex_unlock(&conns_lock);
-
-  if (old_connection_count != connection_count) {
-    if (connection_count == 0) {
-      debug(4, "No active connections.");
-    } else if (connection_count == 1)
-      debug(4, "One active connection.");
-    else
-      debug(4, "%d active connections.", connection_count);
-    old_connection_count = connection_count;
-  }
-  debug(4, "Airplay Volume for new connections is %.6f.", suggested_volume(NULL));
+  lx_worker_defer(old,NULL);
 }
-
-int terminate_conn(int connection_number) {
-  // this will look for a connection by number, cancel it, join it, delete it and send an pre-mpted
-  // metadata message.
-  int found = 0;
+/* 抢占只请求旧连接退出，由监听器回收；调用方可能仍持 principal_conn_lock。 */
+int terminate_conn(int number) {
+  int found=0;
   pthread_mutex_lock(&conns_lock);
-  // look for an empty slot first
-  int i = 0;
-  while ((i < nconns) && (found == 0)) {
-    if ((conns[i] != NULL) && (conns[i]->connection_number == connection_number)) {
-      pthread_cancel(conns[i]->thread);
-      pthread_join(conns[i]->thread, NULL);
-      conns[i] = NULL;
-      found = 1;
-    } else
-      i++;
+  for(int i=0;i<nconns;++i)if(conns[i] && conns[i]->connection_number==number){
+    lx_worker_request_stop(conns[i]->thread);found=1;break;
   }
   pthread_mutex_unlock(&conns_lock);
-#ifdef CONFIG_METADATA
-  if (found) {
-    debug(4, "Connection %d: is being terminated; terminate_conn is sending 'prmp'",
-          connection_number);
-    send_ssnc_metadata('prmp', (const char *)&connection_number, sizeof(connection_number),
-                       1); // PRe-eMPted
-  }
-#endif
   return found;
 }
 
@@ -355,6 +309,7 @@ typedef enum {
 } play_lock_r;
 
 play_lock_r get_play_lock(rtsp_conn_info *conn, int allow_session_interruption) {
+  int lx_previous_number=0;
   play_lock_r response = play_lock_aquisition_failed;
   if (conn != NULL) {
     debug(2, "Connection %d: (%s) get_play_lock with allow_session_interruption of %d.",
@@ -393,7 +348,8 @@ play_lock_r get_play_lock(rtsp_conn_info *conn, int allow_session_interruption) 
       debug(4, "Connection %d: (%s) is pre-empting play lock from connection %d.",
             conn->connection_number, get_category_string(conn->airplay_stream_category),
             previous_principal_conn->connection_number);
-      terminate_conn(previous_principal_conn->connection_number);
+      lx_previous_number=previous_principal_conn->connection_number;
+      terminate_conn(lx_previous_number);
       /*
       if (principal_conn == NULL) {
 #ifdef CONFIG_AIRPLAY_2
@@ -422,6 +378,7 @@ play_lock_r get_play_lock(rtsp_conn_info *conn, int allow_session_interruption) 
             get_category_string(conn->airplay_stream_category));
     }
     pthread_cleanup_pop(1); // release the principal_conn lock
+    if(lx_previous_number)lx_join_connection(lx_previous_number);
   } else {
     debug(1, "Connection %d: (%s) get_play_lock must have a non-NULL conn.",
           conn->connection_number, get_category_string(conn->airplay_stream_category));
@@ -493,7 +450,7 @@ ssize_t read_encrypted(int fd, pair_cipher_bundle *ctx, void *buf, size_t count)
     pthread_cleanup_push(malloc_cleanup, &plain);
     size_t plain_len = 0;
     do {
-      response = read(fd, in, sizeof(in));
+      response = lx_worker_read(fd, in, sizeof(in));
       if (response > 0) {
         buf_add(&ctx->encrypted_read_buffer, in, response);
         ssize_t consumed = pair_decrypt(&plain, &plain_len, ctx->encrypted_read_buffer.data,
@@ -535,11 +492,11 @@ ssize_t write_encrypted(int fd, pair_cipher_bundle *ctx, const void *buf, size_t
   pthread_cleanup_push(malloc_cleanup, &encrypted);
   size_t remain = encrypted_len;
   while (remain > 0) {
-    ssize_t wrote = write(fd, encrypted + (encrypted_len - remain), remain);
+    ssize_t wrote = lx_worker_write(fd, encrypted + (encrypted_len - remain), remain);
     if ((wrote < 0) && (errno == EINTR))
       continue;
     if (wrote <= 0) {
-      int error = (wrote < 0) ? errno : 0; // errno is only meaningful if write() failed
+      int error = (wrote < 0) ? errno : 0; // errno is only meaningful if lx_worker_write() failed
       char errorstring[1024];
       strerror_r(error, errorstring, sizeof(errorstring));
       debug(1, "write_encrypted: socket %d: write returned %zd, error %d: \"%s\". Requested "
@@ -569,10 +526,10 @@ ssize_t read_from_rtsp_connection(rtsp_conn_info *conn, void *buf, size_t count)
           read_encrypted(conn->fd, &conn->ap2_pairing_context.control_cipher_bundle, buf, count);
 
     } else {
-      result = read(conn->fd, buf, count);
+      result = lx_worker_read(conn->fd, buf, count);
     }
 #else
-    result = read(conn->fd, buf, count);
+    result = lx_worker_read(conn->fd, buf, count);
     // In AP1, the RTSP connection is closed in this way, so it's not unexpected
 #endif
     if ((result <= 0) && (errno != 0)) {
@@ -631,8 +588,8 @@ enum rtsp_read_request_response rtsp_read_request(rtsp_conn_info *conn, rtsp_mes
 
         if (nread <= 0) {
           // ETIMEDOUT seems to be from the keepalive having failed.
-          // But it does seem as it it's not always sent, e.g. if another read() is outstanding (?)
-          // EAGAIN seems to be simply from the read() request timing out.
+          // But it does seem as it it's not always sent, e.g. if another lx_worker_read() is outstanding (?)
+          // EAGAIN seems to be simply from the lx_worker_read() request timing out.
           if (errno == ETIMEDOUT) {
             debug(2,
                   "Connection %d has disappeared. As Yeats almost said, \"Too long a "
@@ -739,13 +696,13 @@ enum rtsp_read_request_response rtsp_read_request(rtsp_conn_info *conn, rtsp_mes
           size_t read_chunk = msg_size - inbuf;
           // if (read_chunk > max_read_chunk)
           //  read_chunk = max_read_chunk;
-          // usleep(80000); // wait about 80 milliseconds between reads of up to max_read_chunk
+          // lx_worker_usleep(80000); // wait about 80 milliseconds between reads of up to max_read_chunk
           nread = read_from_rtsp_connection(conn, buf + inbuf, read_chunk);
 
           if (nread <= 0) {
             // ETIMEDOUT seems to be from the keepalive having failed.
-            // But it does seem as it it's not always sent, e.g. if another read() is outstanding
-            // (?) EAGAIN seems to be simply from the read() request timing out.
+            // But it does seem as it it's not always sent, e.g. if another lx_worker_read() is outstanding
+            // (?) EAGAIN seems to be simply from the lx_worker_read() request timing out.
             if (errno == ETIMEDOUT) {
               debug(1,
                     "Connection %d has disappeared. As Yeats almost said, \"Too long a "
@@ -949,11 +906,11 @@ int msg_write_response(rtsp_conn_info *conn, rtsp_message *resp) {
   {
     size_t sent = 0;
     while (sent < packet_length) {
-      ssize_t reply = write(conn->fd, pkt + sent, packet_length - sent);
+      ssize_t reply = lx_worker_write(conn->fd, pkt + sent, packet_length - sent);
       if ((reply < 0) && (errno == EINTR))
         continue;
       if (reply <= 0) {
-        int error = (reply < 0) ? errno : 0; // errno is only meaningful if write() failed
+        int error = (reply < 0) ? errno : 0; // errno is only meaningful if lx_worker_write() failed
         char errorstring[1024];
         strerror_r(error, errorstring, sizeof(errorstring));
         debug(1, "Connection %d: msg_write_response error -- socket %d: write returned %zd, "
@@ -2591,7 +2548,7 @@ void handle_setup_2(rtsp_conn_info *conn, rtsp_message *req, rtsp_message *resp)
             //            debug(1,"self ip: \"%s\"", conn->self_ip_string);
 
             int oldState;
-            pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+            lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
             struct ifaddrs *addrs, *iap;
             getifaddrs(&addrs);
             for (iap = addrs; iap != NULL; iap = iap->ifa_next) {
@@ -2613,7 +2570,7 @@ void handle_setup_2(rtsp_conn_info *conn, rtsp_message *req, rtsp_message *resp)
               }
             }
             freeifaddrs(addrs);
-            pthread_setcancelstate(oldState, NULL);
+            lx_worker_defer(oldState, NULL);
             // Add the newly created timingPeerInfo iin the response
             plist_dict_set_item(timingPeerInfoPlist, "Addresses", addresses);
             plist_dict_set_item(timingPeerInfoPlist, "ID",
@@ -3788,7 +3745,7 @@ static char *make_nonce(void) {
   if (lfd < 0)
     die("could not open /dev/urandom!");
   // int ignore =
-  if (read(lfd, random, sizeof(random)) != sizeof(random))
+  if (lx_worker_read(lfd, random, sizeof(random)) != sizeof(random))
     debug(1, "Error reading /dev/urandom");
   safe_socket_close(&lfd);
   return base64_enc(random, 8); // returns a pointer to malloc'ed memory
@@ -3840,7 +3797,7 @@ static int rtsp_classic_airplay_auth(char **nonce, rtsp_message *req, rtsp_messa
   unsigned int digest_urp_len = EVP_MD_size(EVP_md5());
   unsigned int digest_mu_len = EVP_MD_size(EVP_md5());
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   ctx = EVP_MD_CTX_new();
   EVP_DigestInit_ex(ctx, EVP_md5(), NULL);
 
@@ -3861,7 +3818,7 @@ static int rtsp_classic_airplay_auth(char **nonce, rtsp_message *req, rtsp_messa
 
   EVP_DigestFinal_ex(ctx, digest_mu, &digest_mu_len);
   EVP_MD_CTX_free(ctx);
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
 #endif
 
 #ifdef CONFIG_MBEDTLS
@@ -3935,7 +3892,7 @@ static int rtsp_classic_airplay_auth(char **nonce, rtsp_message *req, rtsp_messa
     snprintf((char *)buf + 2 * i, 3, "%02x", digest_urp[i]);
 
 #ifdef CONFIG_OPENSSL
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   unsigned int digest_total_len = EVP_MD_size(EVP_md5());
 
   ctx = EVP_MD_CTX_new();
@@ -3950,7 +3907,7 @@ static int rtsp_classic_airplay_auth(char **nonce, rtsp_message *req, rtsp_messa
   EVP_DigestUpdate(ctx, buf, 32);
   EVP_DigestFinal_ex(ctx, digest_total, &digest_total_len);
   EVP_MD_CTX_free(ctx);
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
 #endif
 
 #ifdef CONFIG_MBEDTLS
@@ -4022,7 +3979,7 @@ void rtsp_conversation_thread_cleanup_function(void *arg) {
   rtsp_conn_info *conn = (rtsp_conn_info *)arg;
   if (conn != NULL) {
     int oldState;
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+    lx_worker_defer(LX_STOP_DEFERRED, &oldState);
     debug(3, "Connection %d: %s rtsp_conversation_thread_func_cleanup_function called.",
           conn->connection_number, get_category_string(conn->airplay_stream_category));
 
@@ -4050,8 +4007,8 @@ void rtsp_conversation_thread_cleanup_function(void *arg) {
 
     // give the event receiver a chance to exit normally, if it exists
     if (conn->rtp_event_thread != NULL) {
-      pthread_cancel(*conn->rtp_event_thread);
-      pthread_join(*conn->rtp_event_thread, NULL);
+      lx_worker_request_stop(*conn->rtp_event_thread);
+      lx_worker_join(*conn->rtp_event_thread, NULL);
       free(conn->rtp_event_thread);
       conn->rtp_event_thread = NULL;
     }
@@ -4110,6 +4067,14 @@ void rtsp_conversation_thread_cleanup_function(void *arg) {
 #endif
 
     rtp_terminate(conn);
+    release_play_lock(conn);
+#ifdef CONFIG_AIRPLAY_2
+    if(conn->event_socket>0)safe_socket_close(&conn->event_socket);
+    if(conn->buffered_audio_socket>0)safe_socket_close(&conn->buffered_audio_socket);
+    if(conn->ap2_control_socket>0)safe_socket_close(&conn->ap2_control_socket);
+    if(conn->realtime_audio_socket>0)safe_socket_close(&conn->realtime_audio_socket);
+#endif
+    pthread_mutex_destroy(&conn->player_create_delete_mutex);
 
     if (conn->dacp_id) {
       free(conn->dacp_id);
@@ -4149,8 +4114,8 @@ void rtsp_conversation_thread_cleanup_function(void *arg) {
             rc);
 #endif
     debug(3, "Connection %d: Closed.", conn->connection_number);
-    conn->running = 0; // for the garbage collector
-    pthread_setcancelstate(oldState, NULL);
+    __atomic_store_n(&conn->running,0,__ATOMIC_RELEASE); // for the garbage collector
+    lx_worker_defer(oldState, NULL);
   }
 }
 
@@ -4195,6 +4160,7 @@ static void *rtsp_conversation_thread_func(void *pconn) {
   pthread_cleanup_push(rtsp_conversation_thread_cleanup_function, (void *)conn);
 
   rtp_initialise(conn);
+  lx_worker_ready();
   char *hdr = NULL;
 
   enum rtsp_read_request_response reply;
@@ -4207,7 +4173,7 @@ static void *rtsp_conversation_thread_func(void *pconn) {
 #endif
 
   while (conn->stop == 0) {
-    pthread_testcancel();
+    lx_worker_checkpoint();
     int debug_level = 3; // for printing the request and response
     pthread_mutex_lock(&conns_lock);
     int i;
@@ -4340,7 +4306,7 @@ static void *rtsp_conversation_thread_func(void *pconn) {
       } else if (reply == rtsp_read_request_response_bad_packet) {
         conn->stop = 0; // don't stop for a bad packet
         char *response_text = "RTSP/1.0 400 Bad Request\r\nServer: AirTunes/105.1\r\n\r\n";
-        ssize_t lreply = write(conn->fd, response_text, strlen(response_text));
+        ssize_t lreply = lx_worker_write(conn->fd, response_text, strlen(response_text));
         if (lreply == -1) {
           char errorstring[1024];
           strerror_r(errno, (char *)errorstring, sizeof(errorstring));
@@ -4363,7 +4329,7 @@ static void *rtsp_conversation_thread_func(void *pconn) {
 
 void rtsp_listen_loop_cleanup_handler(__attribute__((unused)) void *arg) {
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   debug(2, "rtsp_listen_loop_cleanup_handler called.");
   if (conns) {
     cancel_all_RTSP_threads(unspecified_stream_category, 0); // kill all RTSP listeners
@@ -4378,14 +4344,14 @@ void rtsp_listen_loop_cleanup_handler(__attribute__((unused)) void *arg) {
     }
     free(sockfd);
   }
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
 }
 
 void *rtsp_listen_loop(__attribute((unused)) void *arg) {
   //  #include <syscall.h>
   //  debug(1, "rtsp_listen_loop PID %d", syscall(SYS_gettid));
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState);
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState);
   struct addrinfo hints, *info, *p;
   char portstr[6];
   int *sockfd = NULL;
@@ -4498,12 +4464,13 @@ void *rtsp_listen_loop(__attribute((unused)) void *arg) {
     mdns_register(t1, t2); // note that the dacp thread could still be using the mdns stuff after
                            // all player threads have been terminated, so mdns_unregister can't be
                            // in the rtsp_listen_loop cleanup.
-    pthread_setcancelstate(oldState, NULL);
+    lx_worker_defer(oldState, NULL);
     int acceptfd;
     struct timeval tv;
     pthread_cleanup_push(rtsp_listen_loop_cleanup_handler, (void *)sockfd);
+  lx_worker_ready();
     do {
-      pthread_testcancel();
+      lx_worker_checkpoint();
       tv.tv_sec = 60;
       tv.tv_usec = 0;
 
@@ -4511,7 +4478,7 @@ void *rtsp_listen_loop(__attribute((unused)) void *arg) {
       for (i = 1; i <= nsock; i++)
         FD_SET(sockfd[i], &fds);
 
-      ret = select(maxfd + 1, &fds, 0, 0, &tv);
+      ret = lx_worker_select(maxfd + 1, &fds, 0, 0, &tv);
 
       if (ret < 0) {
         if (errno == EINTR)
@@ -4687,6 +4654,7 @@ void *rtsp_listen_loop(__attribute((unused)) void *arg) {
           debug(1, "Error figuring out Shairport Sync's own IP number.");
         }
 
+        __atomic_store_n(&conn->running,1,__ATOMIC_RELEASE);
         ret = named_pthread_create(&conn->thread, NULL, rtsp_conversation_thread_func, conn,
                                    "rtsp_conn_%d",
                                    conn->connection_number); // also acts as a memory barrier
@@ -4709,7 +4677,7 @@ void *rtsp_listen_loop(__attribute((unused)) void *arg) {
 #endif
 
         debug(3, "Successfully created RTSP receiver thread %d.", conn->connection_number);
-        conn->running = 1; // this must happen before the thread is tracked
+        /* 运行初值已在线程创建前发布。 */
         track_thread(conn);
         release_conn = 0; // successfully initialised
       }

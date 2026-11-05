@@ -56,3 +56,8 @@ build
 
 # IntelliJ/JetBrains
 .idea/
+
+# Android local toolchains, build caches and deliverables
+/android/work/
+/android/outputs/
+__pycache__/

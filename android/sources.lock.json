@@ -1,0 +1,22 @@
+{
+  "shairport-sync": {
+    "url": "https://github.com/mikebrady/shairport-sync.git",
+    "commit": "0a34fbda83724cc06266aadcf7c88acc8fef4e7d",
+    "archive": {
+      "url": "https://codeload.github.com/mikebrady/shairport-sync/tar.gz/0a34fbda83724cc06266aadcf7c88acc8fef4e7d",
+      "file": "shairport-sync-0a34fbda83724cc06266aadcf7c88acc8fef4e7d.tar.gz",
+      "bytes": 722577,
+      "sha256": "3e5a58aba5a751ed8c33ebd73228218105f0afe26da382cd76fd93fbf21f83f4"
+    }
+  },
+  "nqptp": {
+    "url": "https://github.com/mikebrady/nqptp.git",
+    "commit": "ab8fb67483411640fd7f1e193889482f2421c37c",
+    "archive": {
+      "url": "https://codeload.github.com/mikebrady/nqptp/tar.gz/ab8fb67483411640fd7f1e193889482f2421c37c",
+      "file": "nqptp-ab8fb67483411640fd7f1e193889482f2421c37c.tar.gz",
+      "bytes": 47693,
+      "sha256": "3e90e2ea1f52f5c1559a5a46b2cdadb46ac6532a08a34f8cd7e77aa39f6a90c7"
+    }
+  }
+}

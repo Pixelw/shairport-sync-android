@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * Remote Operations
  * This file is part of Shairport Sync.
@@ -405,7 +406,7 @@ void ap2_remote_set_volume(double volume) {
         }
         ap2_event_send_unit_volume_notification(principal_conn, present_unit_volume);
         debug(4, "remote_set_airplay_volume set unit volume to %.3f.", present_unit_volume);
-        usleep(10000);
+        lx_worker_usleep(10000);
       }
       player_volume(volume, principal_conn);
     } else {

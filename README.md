@@ -1,3 +1,7 @@
+> **Android fork:** ARMv7 / Android 8.1 (API 27), using public NDK AAudio.
+> Start with [Android build and runtime instructions](android/README.md).
+> This fork carries Android-specific lifecycle and IPC changes; the original upstream documentation follows below.
+
 # Shairport Sync
 Shairport Sync is an [AirPlay](https://www.pocket-lint.com/speakers/news/apple/144646-apple-airplay-2-vs-airplay-what-s-the-difference) audio player for Linux, FreeBSD, macOS and OpenBSD. It plays audio streamed from Apple devices and from AirPlay sources such as [OwnTone](https://github.com/owntone/owntone-server) (formerly `forked-daapd`).
 

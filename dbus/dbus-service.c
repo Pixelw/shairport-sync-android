@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * This file is part of Shairport Sync.
  * Copyright (c) Mike Brady 2018--2026
@@ -1104,7 +1105,7 @@ static void on_dbus_name_acquired(GDBusConnection *connection, const gchar *name
   shairport_sync_advanced_remote_control_set_shuffle(shairportSyncAdvancedRemoteControlSkeleton,
                                                      "Not Available");
 
-  usleep(20000); // allow settings to be made before connecting the callbacks.
+  lx_worker_usleep(20000); // allow settings to be made before connecting the callbacks.
 
   // connect up the callbacks
 

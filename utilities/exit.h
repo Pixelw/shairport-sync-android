@@ -28,3 +28,8 @@ SOFTWARE.
 void exit_init();
 void exit_request(const int exit_status); // call this to ask for the program to be exited.
 // pass in EXIT_SUCCESS or EXIT_FAILURE.
+
+/* 普通错误路径判断当前线程是否为主线程。 */
+int lx_exit_is_main(void);
+/* 主线程阻塞等待退出请求，返回进程退出码。 */
+int lx_exit_wait(void);

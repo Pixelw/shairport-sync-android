@@ -1,0 +1,172 @@
+#include "ipc_channel.h"
+/*
+ * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
+ * Copyright (c) 2021-2022 Mike Brady.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, version 2.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Commercial licensing is also available.
+ */
+
+#include "nqptp-clock-sources.h"
+#include "debug.h"
+#include "general-utilities.h"
+#include "nqptp-ptp-definitions.h"
+#include <arpa/inet.h>
+#include <errno.h>
+#include <ifaddrs.h>
+#include <netdb.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h> // for ftruncate and others
+#include <unistd.h>    // for ftruncate and others
+
+#include <fcntl.h>      /* For O_* constants */
+#include <sys/mman.h>   // for shared memory stuff
+#include <sys/select.h> // for fd_set
+#include <sys/stat.h>   // umask
+
+#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_DARWIN)
+#include <netinet/in.h>
+#endif
+
+#ifndef FIELD_SIZEOF
+#define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
+#endif
+
+// Each client owns its clock table and its shared memory interface -- there is
+// deliberately no daemon-wide clock table or shared memory region any more.
+client_record clients[MAX_CLIENTS];
+
+const char *get_client_name(int client_id) {
+  if ((client_id >= 0) && (client_id < MAX_CLIENTS)) {
+    return clients[client_id].shm_interface_name;
+  } else {
+    return "";
+  }
+}
+
+int client_is_in_use(int client_id) {
+  if ((client_id >= 0) && (client_id < MAX_CLIENTS))
+    return clients[client_id].shm_interface_name[0] != '\0';
+  return 0;
+}
+
+int get_client_id(char *client_shared_memory_interface_name) {
+
+  if (!client_shared_memory_interface_name || strcmp(client_shared_memory_interface_name,LX_IPC_CLIENT))
+    return -1; /* 仅接受固定协议标识，不把控制报文转换为路径。 */
+  if (clients[0].shm_interface_name[0]) return 0;
+  int fd=lx_ipc_writer_create();
+  if(fd<0){warn("LX04 private SMI create failed: %s",strerror(errno));return -1;}
+  memset(&clients[0],0,sizeof(clients[0]));
+  strcpy(clients[0].shm_interface_name,LX_IPC_CLIENT);
+  clients[0].shm_fd=fd;
+  return 0;
+
+}
+
+int delete_client(int client_id) {
+
+  if(client_id<0 || client_id>=MAX_CLIENTS)return -1;
+  if(!clients[client_id].shm_interface_name[0])return 0;
+  int result=lx_ipc_writer_drop();
+  memset(&clients[client_id],0,sizeof(clients[client_id]));
+  return result;
+
+}
+
+int delete_clients() {
+  int response = 0; // okay unless something happens
+  int i;
+  for (i = 0; i < MAX_CLIENTS; i++)
+    if (delete_client(i) != 0)
+      response = -1;
+  return response;
+}
+
+int find_clock_source_record(char *sender_string, clock_source_private_data *clocks_private_info) {
+  // return the index of the clock in the clock information arrays or -1
+  int response = -1;
+  int i = 0;
+  int found = 0;
+  while ((found == 0) && (i < MAX_CLOCKS)) {
+    if (((clocks_private_info[i].flags & (1 << clock_is_in_use)) != 0) &&
+        (strcasecmp(sender_string, (const char *)&clocks_private_info[i].ip) == 0))
+      found = 1;
+    else
+      i++;
+  }
+  if (found == 1)
+    response = i;
+  return response;
+}
+
+int create_clock_source_record(char *sender_string,
+                               clock_source_private_data *clocks_private_info) {
+  // return the index of a clock entry in the clock information arrays or -1 if full
+  // initialise the entries in the shared and private arrays
+  int response = -1;
+  int i = 0;
+  int found = 0; // trying to find an unused entry
+  while ((found == 0) && (i < MAX_CLOCKS)) {
+    if ((clocks_private_info[i].flags & (1 << clock_is_in_use)) == 0)
+      found = 1;
+    else
+      i++;
+  }
+
+  if (found == 1) {
+    int family = 0;
+
+    // check its ipv4/6 family -- derived from https://stackoverflow.com/a/3736377, with thanks.
+    struct addrinfo hint, *res = NULL;
+    memset(&hint, '\0', sizeof hint);
+    hint.ai_family = PF_UNSPEC;
+    hint.ai_flags = AI_NUMERICHOST;
+    if (getaddrinfo(sender_string, NULL, &hint, &res) == 0) {
+      family = res->ai_family;
+      freeaddrinfo(res);
+      response = i;
+      memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
+      strncpy((char *)&clocks_private_info[i].ip, sender_string,
+              FIELD_SIZEOF(clock_source_private_data, ip) - 1);
+      clocks_private_info[i].family = family;
+      clocks_private_info[i].flags |= (1 << clock_is_in_use);
+      debug(2, "create record for ip: %s, family: %s.", &clocks_private_info[i].ip,
+            clocks_private_info[i].family == AF_INET6 ? "IPv6" : "IPv4");
+    } else {
+      debug(1, "cannot getaddrinfo for ip: %s.", &clocks_private_info[i].ip);
+    }
+  } else {
+    debug(1, "Clock tables full!");
+  }
+  return response;
+}
+
+void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
+                              uint64_t local_time,
+                              uint64_t local_to_master_offset,
+                              uint64_t clock_change_offset,
+                              uint64_t mastership_start_time) {
+
+  if(!client_is_in_use(client_id))return;
+  struct shm_structure value={.version=NQPTP_SHM_STRUCTURES_VERSION};
+  value.main.master_clock_id=master_clock_id;
+  if(ip){value.main.master_clock_start_time=mastership_start_time;value.main.local_time=local_time;
+    value.main.local_to_master_time_offset=local_to_master_offset;value.main.clock_change_offset=clock_change_offset;}
+  value.secondary=value.main;
+  if(lx_ipc_writer_publish(&value) && errno!=EAGAIN && errno!=EWOULDBLOCK)
+    warn("LX04 private SMI publish failed: %s",strerror(errno));
+
+}

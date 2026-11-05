@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * Metadata hub and access methods.
  * Basically, if you need to store metadata
@@ -218,7 +219,7 @@ char *metadata_write_image_file(const char *buf, int len) {
   // free it if you don't need it.
 
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
   char *path = NULL;                                         // this will be what is returned
   if (strcmp(config.cover_art_cache_dir, "") != 0) { // an empty string means do not write the file
 
@@ -304,7 +305,7 @@ char *metadata_write_image_file(const char *buf, int len) {
       int cover_fd = open(path, O_WRONLY | O_CREAT | O_EXCL, S_IRWXU | S_IRGRP | S_IROTH);
       if (cover_fd > 0) {
         // write the contents
-        if (write(cover_fd, buf, len) < len) {
+        if (lx_worker_write(cover_fd, buf, len) < len) {
           warn("Writing cover art file \"%s\" failed!", path);
           free(path);
           path = NULL;
@@ -360,7 +361,7 @@ char *metadata_write_image_file(const char *buf, int len) {
             config.cover_art_cache_dir);
     }
   }
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   return path;
 }
 
@@ -832,8 +833,8 @@ void metadata_hub_queue_init() {
 
 void metadata_hub_queue_stop() {
   // debug(2, "metadata stop hub thread.");
-  pthread_cancel(metadata_hub_thread);
-  pthread_join(metadata_hub_thread, NULL);
+  lx_worker_request_stop(metadata_hub_thread);
+  lx_worker_join(metadata_hub_thread, NULL);
   pc_queue_delete(&metadata_hub_queue);
   // debug(2, "metadata stop hub done.");
 }

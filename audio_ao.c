@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * libao output driver. This file is part of Shairport.
  * Copyright (c) James Laird 2013
@@ -307,9 +308,9 @@ static int play(void *buf, int samples, __attribute__((unused)) int sample_type,
   // debug(1,"ao play(): play %d samples, bytes per sample: %u, channels: %u", samples,
   // ao_output_format.bits/8, ao_output_format.channels);
   int oldState;
-  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldState); // make this un-cancellable
+  lx_worker_defer(LX_STOP_DEFERRED, &oldState); // make this un-cancellable
   response = ao_play(dev, buf, samples * ao_output_format.bits / 8 * ao_output_format.channels);
-  pthread_setcancelstate(oldState, NULL);
+  lx_worker_defer(oldState, NULL);
   return response;
 }
 

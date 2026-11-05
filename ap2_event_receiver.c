@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * Apple AirPlay 2 Event Receiver. This file is part of Shairport Sync.
  * Copyright (c) Mike Brady 2014--2026
@@ -180,39 +181,18 @@ void ap2_event_receiver_cleanup_handler(void *arg) {
 }
 
 void *ap2_event_receiver(void *arg) {
-  rtsp_conn_info *conn = (rtsp_conn_info *)arg;
-  debug(2, "Connection %d: AP2 Event Receiver started", conn->connection_number);
-  SOCKADDR remote_addr;
-  memset(&remote_addr, 0, sizeof(remote_addr));
-  socklen_t addr_size = sizeof(remote_addr);
 
+  rtsp_conn_info *conn=arg;
+  pthread_cleanup_push(ap2_event_receiver_cleanup_handler,arg);
+  lx_worker_ready();
+  SOCKADDR address;memset(&address,0,sizeof(address));socklen_t length=sizeof(address);
   pthread_mutex_lock(&conn->event_sender_mutex);
-  pthread_cleanup_push(mutex_unlock, &conn->event_sender_mutex);
-  conn->event_channel_fd =
-      eintr_checked_accept(conn->event_socket, (struct sockaddr *)&remote_addr, &addr_size);
-  pthread_cleanup_pop(1); // unlock the mutex
-  if (conn->event_channel_fd > 0) {
-    debug(2,
-          "Connection %d: ap2_event_receiver accepted a connection on socket %d and moved to a new "
-          "socket %d.",
-          conn->connection_number, conn->event_socket, conn->event_channel_fd);
-    pthread_cleanup_push(ap2_event_receiver_cleanup_handler, arg);
+  pthread_cleanup_push(mutex_unlock,&conn->event_sender_mutex);
+  conn->event_channel_fd=eintr_checked_accept(conn->event_socket,(struct sockaddr *)&address,&length);
+  pthread_cleanup_pop(1);
+  if(conn->event_channel_fd>=0){ap2_event_send_update_info(conn);for(;;)lx_worker_usleep(100000);}
+  pthread_cleanup_pop(1);
+  conn->ap2_event_receiver_exited=1;
+  return NULL;
 
-    ap2_event_send_update_info(conn);
-
-    while (1) {
-      usleep(100000);
-    };
-
-    debug(3, "Connection %d: AP2 Event Receiver RTP thread starting \"normal\" exit.",
-          conn->connection_number);
-    pthread_cleanup_pop(1); // do the cleanup
-  } else {
-    debug(1, "Connection %d: could not accept an event socket", conn->connection_number);
-    conn->event_channel_fd = -1;
-  }
-  debug(2, "Connection %d: AP2 Event Receiver RTP thread \"normal\" exit.",
-        conn->connection_number);
-  conn->ap2_event_receiver_exited = 1;
-  pthread_exit(NULL);
 }

@@ -1,3 +1,4 @@
+#include "worker.h"
 /*
  * Activity Monitor
  *
@@ -150,6 +151,7 @@ void *activity_monitor_thread_code(void *arg) {
   if (rc)
     die("activity_monitor: error %d initialising activity_monitor_cv.", rc);
   pthread_cleanup_push(activity_thread_cleanup_handler, arg);
+  lx_worker_ready();
 
   uint64_t sec;
   uint64_t nsec;
@@ -159,19 +161,20 @@ void *activity_monitor_thread_code(void *arg) {
   player_state = ps_inactive;
 
   pthread_mutex_lock(&activity_monitor_mutex);
+  pthread_cleanup_push(mutex_unlock,&activity_monitor_mutex);
   do {
     switch (state) {
     case am_inactive:
       debug(2, "am_state: am_inactive");
       while (player_state != ps_active)
-        pthread_cond_wait(&activity_monitor_cv, &activity_monitor_mutex);
+        lx_worker_cond_wait(&activity_monitor_cv, &activity_monitor_mutex);
       // state = am_active; this is done by the activity_monitor_signify_activity(1) function
       debug(2, "am_state: am_active");
       break;
     case am_active:
       // debug(1,"am_state: am_active");
       while (player_state != ps_inactive)
-        pthread_cond_wait(&activity_monitor_cv, &activity_monitor_mutex);
+        lx_worker_cond_wait(&activity_monitor_cv, &activity_monitor_mutex);
 
       // if it's not already am_inactive, the it should be beginning to time out...
       if (state != am_inactive) {
@@ -199,15 +202,15 @@ void *activity_monitor_thread_code(void *arg) {
       rc = 0;
       while ((player_state != ps_active) && (rc != ETIMEDOUT)) {
 #ifdef COMPILE_FOR_LINUX_AND_FREEBSD_AND_CYGWIN_AND_OPENBSD
-        rc = pthread_cond_timedwait(&activity_monitor_cv, &activity_monitor_mutex,
+        rc = lx_worker_cond_timedwait(&activity_monitor_cv, &activity_monitor_mutex,
                                     &time_for_wait); // this is a pthread cancellation point
 #endif
 #ifdef COMPILE_FOR_OSX
-        rc = pthread_cond_timedwait_relative_np(&activity_monitor_cv, &activity_monitor_mutex,
+        rc = lx_worker_cond_timedwait_relative(&activity_monitor_cv, &activity_monitor_mutex,
                                                 &time_for_wait);
-        // pthread_cond_timedwait_relative_np() is not a cancellation point on macOS, so
-        // check here -- otherwise a pending pthread_cancel() is never acted on
-        pthread_testcancel();
+        // lx_worker_cond_timedwait_relative() is not a cancellation point on macOS, so
+        // check here -- otherwise a pending lx_worker_request_stop() is never acted on
+        lx_worker_checkpoint();
 #endif
       }
       if (player_state == ps_active)
@@ -230,8 +233,8 @@ void *activity_monitor_thread_code(void *arg) {
       break;
     }
   } while (1);
-  pthread_mutex_unlock(&activity_monitor_mutex);
-  pthread_cleanup_pop(0); // should never happen
+  pthread_cleanup_pop(1);
+  pthread_cleanup_pop(1); // 正常/协作停止出口均销毁资源
   pthread_exit(NULL);
 }
 
@@ -251,8 +254,9 @@ void activity_monitor_stop() {
       going_inactive(config.cmd_blocking);
       state = am_inactive;
     }
-    pthread_cancel(activity_monitor_thread);
-    pthread_join(activity_monitor_thread, NULL);
+    lx_worker_request_stop(activity_monitor_thread);
+    lx_worker_join(activity_monitor_thread, NULL);
+    activity_monitor_running=0;
     debug(2, "activity_monitor_stop complete");
   }
 }
