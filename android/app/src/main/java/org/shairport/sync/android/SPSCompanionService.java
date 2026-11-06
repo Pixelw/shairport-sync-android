@@ -147,7 +147,7 @@ public final class SPSCompanionService extends Service implements CompanionConne
                 } catch (Exception ignored) { state = next; }
             }
             connected = true;
-            if (changed && !terminal && pendingId == 0) message = "";
+            if (changed && pendingId == 0) message = "";
             if (!terminal && next.cover == 0) { artwork = null;  }
             boolean launch = lifecycle.update(next.session, next.state, SystemClock.elapsedRealtime());
             if (changed || launch || SystemClock.elapsedRealtime() - lastSaved >= 5000) save();
