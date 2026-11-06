@@ -59,7 +59,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -274,9 +273,7 @@ private fun PlayerLayout(state: PlayerSnapshot, controls: Boolean, clock: String
         val coverSize by animateDpAsState(
             minOf((maxWidth - 48.dp).coerceAtLeast(48.dp), (maxHeight - 48.dp - if (controls) 24.dp else 80.dp).coerceAtLeast(48.dp)),
             tween(250), label = "coverSize")
-        val coverOffset by animateDpAsState(if (controls) (-12).dp else 0.dp,
-            tween(250), label = "coverOffset")
-        Artwork(state.artwork, Modifier.size(coverSize).align(Alignment.Center).offset { IntOffset(0, coverOffset.roundToPx()) })
+        Artwork(state.artwork, Modifier.size(coverSize).align(Alignment.Center))
         AnimatedVisibility(!controls, Modifier.align(Alignment.TopCenter).padding(top = 24.dp), fadeIn(tween(250)), fadeOut(tween(250))) {
             Label(clock, 26, weight = FontWeight.Medium)
         }
@@ -294,7 +291,7 @@ private fun PlayerLayout(state: PlayerSnapshot, controls: Boolean, clock: String
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().fillMaxHeight(.74f).align(Alignment.BottomCenter)
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .70f)))))
-                Column(Modifier.align(Alignment.BottomCenter).padding(24.dp).widthIn(max = 680.dp).fillMaxWidth()) {
+                Column(Modifier.align(Alignment.BottomCenter).padding(start = 24.dp, top = 24.dp, end = 24.dp).widthIn(max = 680.dp).fillMaxWidth()) {
                     Label(state.title, 28, Modifier.fillMaxWidth().clipToBounds().basicMarquee(iterations = Int.MAX_VALUE), FontWeight.Medium)
                     Label(state.artist, 19, Modifier.padding(top = 2.dp).fillMaxWidth().clipToBounds().basicMarquee(iterations = Int.MAX_VALUE), color = Color.White.copy(alpha = .6f))
                     Spacer(Modifier.height(18.dp))
