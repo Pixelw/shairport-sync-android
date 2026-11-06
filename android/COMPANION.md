@@ -19,7 +19,9 @@ export ANDROID_HOME=/absolute/path/to/Android/sdk
 ./android/gradlew -p android assembleDebug lintDebug
 ```
 
-App 使用 Gradle 8.13、AGP 8.11.1、compileSdk 36、minSdk/targetSdk 27，建议使用
+App 使用 Gradle 8.13、AGP 8.11.1、Kotlin/Compose Compiler 2.2.21、
+Compose BOM 2026.06.01（UI/Foundation 1.11.4）、Activity Compose 1.11.0。
+启用 AndroidX 与 Compose，compileSdk 36、minSdk/targetSdk 27，建议使用
 JDK 17 或 21。targetSdk 27 是 API27 专用侧载版本的明确边界，不是 Play 发布配置；
 新版 Android 的后台弹出、横屏和保活不在首版验收范围。APK 位于
 `android/app/build/outputs/apk/debug/app-debug.apk`，不包含原生二进制。
@@ -49,8 +51,16 @@ App 不需要 root 授权。SELinux 若禁止 socket 通信则会重连，不能
 
 ## 页面行为
 
-- 800×480 横屏：圆角封面、封面模糊背景、歌曲名、艺术家、专辑、发送端设备名、
-  只读进度条与播放/暂停、上一首、下一首。未知字段显示占位；无时长时不计算百分比。
+- 默认页面为 Kotlin/Compose `PlayerV2Activity`，应用图标、通知及新会话自动弹出均使用该页；
+  旧 `PlaybackActivity` 保留为非导出页面。以 800×480 横屏为主要布局目标。
+- 展示态为系统格式的当前时间、大尺寸圆角正方形封面及单行“歌曲名 · 艺术家名”；
+  歌曲名纯白，艺术家为 60% 白色，超长文本连续滚动。四周至少留 24dp。
+- 点击显示 Homeview 风格叠层控件：歌曲名、艺术家、只读进度及播放/暂停、上一首、下一首。
+  首次点击只唤出控件，每次触摸续时，无操作 5 秒后隐藏，切换动画为 250ms。
+  按钮触摸区域至少 48dp；无时长或无有效位置时不计算百分比。
+- 背景使用封面缩略图的可分离高斯模糊，在后台仅按封面变化计算，兼容 API27；
+  不依赖 API31 的 RenderEffect。无封面使用音乐符号占位。
+- 控件仅展示现有协议支持的功能，不包含音量、进度拖动、歌词、队列和输出设备管理。
 - 新会话首次播放时唤醒屏幕并全屏打开；暂停保留页面，换曲不重复打开。
 - 停止、断开投放或本机连接异常后等待 **20 秒**。保留最后歌曲/封面、冻结进度并
   禁用控制；重复结束事件不延长截止时间。期间恢复活动会话则取消退出，新会话复用页面。
@@ -101,3 +111,23 @@ AP2 遥控的串行锁与 socket 等待设为 2 秒，失败的加密控制通�
 合成桥接夹具替代发送端和音频播放器，因此不证明真实 AirPlay 元数据完整性、
 真实发送端遥控响应、长时音频稳定性或专用低权限 SELinux 域可用。
 实际整条 AirPlay 链路仍需配合发送端单独验收。
+
+
+### Compose Player V2（2026-11-06）
+
+V2 已完成构建、lint 和 LX04 合成数据 UI/IPC 检查；28 项独立界面断言及两种布局截图见
+`android/outputs/player-v2/VALIDATION.md`。测试的中断、系统面板影响和清理情况在该记录中单列。
+该结果不替代真实发送端遥控或音频稳定性验收。原生服务未重启；没有提交或推送。
+
+
+### R8 release 构建与部署
+
+```sh
+./android/gradlew -p android assembleRelease lintRelease
+```
+
+release 启用 R8 代码优化、混淆和资源缩减，使用默认 `proguard-android-optimize.txt`。
+默认生成 `android/app/build/outputs/apk/release/app-release-unsigned.apk`，签名由部署环境提供；
+混淆映射位于 `android/app/build/outputs/mapping/release/`，应与对应 APK 一起保留以供排错。
+本次设备部署使用现有本机开发证书签名，保持覆盖安装和 UID，不代表正式发行签名。
+部署验证和原生服务启动状态见 `android/outputs/player-v2-release/VALIDATION.md`。

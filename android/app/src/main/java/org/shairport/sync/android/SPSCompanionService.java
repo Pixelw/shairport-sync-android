@@ -82,7 +82,7 @@ public final class SPSCompanionService extends Service implements CompanionConne
 
     private Notification notification() {
         PendingIntent open = PendingIntent.getActivity(this, 0,
-                new Intent(this, PlaybackActivity.class).putExtra("automatic", false),
+                new Intent(this, PlayerV2Activity.class).putExtra("automatic", false),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this, "companion").setSmallIcon(org.shairport.sync.android.R.drawable.ic_notification)
                 .setContentTitle("Shairport Sync Android").setContentText("正在监听本机 AirPlay 播放状态")
@@ -152,7 +152,7 @@ public final class SPSCompanionService extends Service implements CompanionConne
             boolean launch = lifecycle.update(next.session, next.state, SystemClock.elapsedRealtime());
             if (changed || launch || SystemClock.elapsedRealtime() - lastSaved >= 5000) save();
             if (launch && observers.isEmpty()) {
-                Intent intent = new Intent(this, PlaybackActivity.class).putExtra("automatic", true)
+                Intent intent = new Intent(this, PlayerV2Activity.class).putExtra("automatic", true)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 startActivity(intent);
             }

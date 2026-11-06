@@ -1,4 +1,8 @@
-plugins { id 'com.android.application' }
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+}
 
 android {
     namespace 'org.shairport.sync.android'
@@ -10,6 +14,15 @@ android {
         versionCode 1
         versionName '0.1.0'
     }
+    buildFeatures { compose true }
+    buildTypes {
+        release {
+            // 发布构建启用 R8 完整优化、混淆及资源缩减；签名由部署环境提供。
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+        }
+    }
     lint {
         // 首版面向 API27 专用设备侧载，不是 Google Play 发布构建。
         disable 'ExpiredTargetSdkVersion'
@@ -18,4 +31,19 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+}
+
+kotlin { compilerOptions { jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8 } }
+
+dependencies {
+    // 按 SDK36 兼容边界固定版本，较新一代 Compose 要求 SDK37。
+    //noinspection GradleDependency
+    implementation platform('androidx.compose:compose-bom:2026.06.01')
+    //noinspection GradleDependency
+    implementation 'androidx.activity:activity-compose:1.11.0'
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.animation:animation'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
 }
