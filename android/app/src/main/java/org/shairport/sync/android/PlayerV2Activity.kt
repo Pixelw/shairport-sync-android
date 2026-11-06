@@ -73,6 +73,7 @@ class PlayerV2Activity : ComponentActivity(), SPSCompanionService.Observer {
     private var service: SPSCompanionService? = null
     private var bound = false
     private var automatic = false
+    private var sessionObserved = false
     private var screen by mutableStateOf(PlayerSnapshot())
     private val binding = object : ServiceConnection {
         /** 绑定成功后订阅服务主线程快照。 */
@@ -96,6 +97,7 @@ class PlayerV2Activity : ComponentActivity(), SPSCompanionService.Observer {
         super.onCreate(savedInstanceState)
         automatic = savedInstanceState?.getBoolean("automatic")
             ?: intent.getBooleanExtra("automatic", false)
+        sessionObserved = savedInstanceState?.getBoolean("sessionObserved") ?: false
         window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN or
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
@@ -115,9 +117,10 @@ class PlayerV2Activity : ComponentActivity(), SPSCompanionService.Observer {
         startForegroundService(Intent(this, SPSCompanionService::class.java))
     }
 
-    /** 保存自动打开标记，使页面重建保持原有退出规则。 */
+    /** 保存打开来源及本页会话标记，使页面重建保持会话结束后的退出规则。 */
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("automatic", automatic)
+        outState.putBoolean("sessionObserved", sessionObserved)
         super.onSaveInstanceState(outState)
     }
 
@@ -147,12 +150,15 @@ class PlayerV2Activity : ComponentActivity(), SPSCompanionService.Observer {
     /** 将真实服务状态转换为不可变显示快照，不预测命令执行结果。 */
     override fun changed() {
         val current = service ?: return
-        if (automatic && current.expired()) {
-            finishAndRemoveTask()
+        val state = current.playback()
+        val expired = current.expired()
+        if (expired && (automatic || sessionObserved)) {
+            finish()
             return
         }
-        val state = current.playback()
-        val waiting = state == null || current.expired() || state.session.isEmpty()
+        // 会话结束前或宽限期内已打开的页面都应退出；结束后新开的等待页不受旧超时影响。
+        if (!expired && state != null && state.session.isNotEmpty()) sessionObserved = true
+        val waiting = state == null || expired || state.session.isEmpty()
         val online = current.connected()
         val stopped = waiting || !online || state?.state == "stopped"
         val playing = !waiting && state?.state == "playing"
