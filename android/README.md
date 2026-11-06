@@ -1,7 +1,9 @@
 # Android ARMv7 / API 27
 
 This fork ports Shairport Sync 5.6.2 and NQPTP 1.2.9 to Android 8.1 using public
-NDK AAudio. It produces two native PIE executables, not an APK or Java service.
+NDK AAudio. The native build produces two PIE executables. An optional Java Companion App
+under `app/` displays playback metadata and provides AirPlay 2 controls; see
+[Companion App](COMPANION.md) for its separate Gradle build and deployment.
 The port targets Bionic ARM EABI (softfp calling convention), with static public
 dependencies and no glibc, private AudioTrack ABI, or shared C++ runtime.
 
@@ -93,7 +95,8 @@ retained; receiver verbosity defaults to 1 with playback statistics enabled.
 Configuration can override the diagnostic settings. Volume remains software
 attenuation: Android system-volume synchronization and AudioFocus ducking are
 not implemented. External command hooks, FIFO output and shell-based config
-display are deliberately disabled in this port.
+display are deliberately disabled in this port. The optional Companion bridge uses
+a UID-checked local Unix socket and remains disabled until configured.
 
 ## Validation boundaries
 

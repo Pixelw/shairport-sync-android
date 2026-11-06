@@ -1,3 +1,6 @@
+#ifdef CONFIG_ANDROID_COMPANION
+#include "companion.h"
+#endif
 #include "worker.h"
 /*
  * Slave-clocked ALAC stream player. This file is part of Shairport.
@@ -4475,6 +4478,10 @@ void *player_thread_func(void *arg) {
               uint32_t output_buffer_delay_time_in_input_frames_32 =
                   output_buffer_delay_time_in_input_frames;
               metadata_store.head_rtp_timestamp -= output_buffer_delay_time_in_input_frames_32;
+#ifdef CONFIG_ANDROID_COMPANION
+              sps_companion_timing(conn->connection_number, conn->frames_played,
+                                   metadata_store.head_rtp_timestamp);
+#endif
 
 #endif
 

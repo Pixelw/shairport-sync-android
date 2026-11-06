@@ -1,0 +1,21 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'org.shairport.sync.android'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'org.shairport.sync.android'
+        minSdk 27
+        targetSdk 27
+        versionCode 1
+        versionName '0.1.0'
+    }
+    lint {
+        // 首版面向 API27 专用设备侧载，不是 Google Play 发布构建。
+        disable 'ExpiredTargetSdkVersion'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}

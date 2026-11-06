@@ -1,3 +1,6 @@
+#ifdef CONFIG_ANDROID_COMPANION
+#include "companion.h"
+#endif
 /*
  * RTSP Command Endpoint metadata handler for AirPlay 2 only.
  * This file is part of Shairport Sync.
@@ -151,9 +154,10 @@ void metadata_hub_handle_command_plist(rtsp_conn_info *conn, const plist_t comma
                         send_metadata_to_mqtt_queue('ssnc', 'PICT', buff, length, NULL, 0);
 #endif
                       }
-                      plist_dict_set_item(metadata_store.npi.npi_plist,
-                                          "kShairportSyncNowPlayingInfoArtworkFilePath",
-                                          plist_new_string(metadata_store.npi.cover_art_pathname));
+                      if (metadata_store.npi.cover_art_pathname != NULL)
+                        plist_dict_set_item(metadata_store.npi.npi_plist,
+                                            "kShairportSyncNowPlayingInfoArtworkFilePath",
+                                            plist_new_string(metadata_store.npi.cover_art_pathname));
                       plist_dict_remove_item(
                           metadata_store.npi.npi_plist,
                           "kMRMediaRemoteNowPlayingInfoArtworkData"); // remove it
@@ -346,7 +350,11 @@ void metadata_hub_handle_command_plist(rtsp_conn_info *conn, const plist_t comma
                     // must have a timestamp
                     if (timestamp_item != NULL) {
                       metadata_store.npi.framesPlayedOnReceiptOfNowPlayingInfo =
-                          conn->frames_played; // we'll be counting frames played from now on
+#ifdef CONFIG_ANDROID_COMPANION
+                          sps_companion_frames(conn->connection_number);
+#else
+                          conn->frames_played;
+#endif // we'll be counting frames played from now on
                       int64_t elapsedTime = 0;
                       // if we have a real time reference
                       if (conn->localTimeToAppleAbsoluteTimeOffset.valid != 0) {

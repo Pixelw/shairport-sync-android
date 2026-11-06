@@ -47,3 +47,7 @@ int remote_set_shuffle_mode(shuffle_status_type mode);
 void remote_simple_command(simple_command_t command);
 
 ssize_t ap2_event_send_dev_mule(unsigned int command_number);
+#ifdef CONFIG_ANDROID_COMPANION
+/* 向指定会话发送基础命令；返回 1 表示发送端接受，0 不可用，-1 发送失败。 */
+int remote_simple_command_checked(simple_command_t command, int connection);
+#endif

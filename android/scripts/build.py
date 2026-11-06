@@ -76,13 +76,13 @@ def main():
         if snapshot.exists():
             shutil.rmtree(snapshot)
         # 构建副本保持源码相对布局，但不复制任何本地缓存与产物。
-        shutil.copytree(original, snapshot, ignore=shutil.ignore_patterns('.git', 'work', 'outputs', '.DS_Store', '__pycache__'))
+        shutil.copytree(original, snapshot, ignore=shutil.ignore_patterns('.git', 'work', 'outputs', '.DS_Store', '__pycache__', '.gradle', 'app'))
         source = snapshot / 'nqptp' if project == 'nqptp' else snapshot
         sources[project] = {str(p.relative_to(snapshot)): digest(p) for p in sorted(snapshot.rglob('*')) if p.is_file()}
         flags = ['--host=arm-linux-androideabi', '--build='+build_triplet(), '--prefix=/data/local/tmp/lx04-ap2']
         config_env = env.copy()
         if project == 'shairport-sync':
-            flags += ['--with-os=android', '--with-airplay-2', '--with-ssl=openssl', '--with-dns_sd', '--without-configfiles', '--without-create-user-group']
+            flags += ['--with-os=android', '--with-android-companion', '--with-airplay-2', '--with-ssl=openssl', '--with-dns_sd', '--without-configfiles', '--without-create-user-group']
             config_env['LIBS'] += ' -laaudio -lgpg-error'
         with (logs / (project+'.log')).open('w') as log:
             for command in (['autoreconf', '-fi'], ['sh', 'configure']+flags, ['make', '-j6']):

@@ -1,3 +1,6 @@
+#ifdef CONFIG_ANDROID_COMPANION
+#include "companion.h"
+#endif
 #include "lx_log.h"
 #include "worker.h"
 /*
@@ -2285,6 +2288,9 @@ void exit_function() {
 
 #ifdef CONFIG_METADATA_HUB
     debug(2, "Stopping metadata hub");
+#ifdef CONFIG_ANDROID_COMPANION
+    sps_companion_stop();
+#endif
     metadata_hub_stop();
     debug(2, "Stopping metadata done");
 #endif
@@ -3524,6 +3530,9 @@ int main(int argc, char **argv) {
 #ifdef CONFIG_METADATA_HUB
   // debug(1, "Initialising metadata hub");
   metadata_hub_init();
+#ifdef CONFIG_ANDROID_COMPANION
+  sps_companion_start();
+#endif
 #endif
 
 #ifdef CONFIG_DACP_CLIENT

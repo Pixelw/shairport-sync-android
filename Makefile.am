@@ -45,6 +45,10 @@ shairport_sync_SOURCES = shairport.c bonjour_strings.c mdns.c common.c rtp.c \
   utilities/general_utilities.c \
   utilities/exit.c audio_aaudio.c android/port/worker.c android/port/stop_token.c android/port/clock_map.c android/port/lx_log.c android/port/smi_file.c android/port/ipc_channel.c
 
+if USE_ANDROID_COMPANION
+shairport_sync_SOURCES += android/port/companion.c android/include/companion.h
+endif
+
 if USE_REMOTE_CONTROL
 shairport_sync_SOURCES +=   remote/remote.c
 endif

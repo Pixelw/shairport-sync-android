@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Shairport Sync Android</string>
+    <string name="waiting_device">AIRPLAY · 等待投放</string>
+    <string name="waiting_title">等待 AirPlay</string>
+</resources>

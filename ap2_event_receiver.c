@@ -36,13 +36,51 @@
 #include "metadata/core.h"
 #endif
 
+#ifdef CONFIG_ANDROID_COMPANION
+static _Thread_local int companion_mode;
+void ap2_event_companion_mode(int enabled) { companion_mode = enabled; }
+struct companion_timeouts {
+  int fd, active;
+  struct timeval receive, send;
+};
+static void restore_companion_timeouts(void *value) {
+  struct companion_timeouts *saved = value;
+  if (saved->active) {
+    setsockopt(saved->fd, SOL_SOCKET, SO_RCVTIMEO, &saved->receive, sizeof(saved->receive));
+    setsockopt(saved->fd, SOL_SOCKET, SO_SNDTIMEO, &saved->send, sizeof(saved->send));
+  }
+}
+#endif
+
 // will return -1 if there is an error, the port is not open or the response is not a valid
 // successful RTSP response, 0 if the port was closed and a positive number if okay
 ssize_t ap2_event_port_send_message(rtsp_conn_info *conn, char *data, size_t data_length) {
   ssize_t result = -1; // assume a problem
+#ifdef CONFIG_ANDROID_COMPANION
+  if (companion_mode) {
+    struct timespec until;
+    clock_gettime(CLOCK_REALTIME, &until); until.tv_sec += 2;
+    if (pthread_mutex_timedlock(&conn->event_sender_mutex, &until)) return -1;
+  } else
+#endif
   pthread_mutex_lock(&conn->event_sender_mutex);
   pthread_cleanup_push(mutex_unlock, &conn->event_sender_mutex);
-  if (conn->event_channel_fd != 0) {
+#ifdef CONFIG_ANDROID_COMPANION
+  struct companion_timeouts saved = {.fd = conn->event_channel_fd};
+  pthread_cleanup_push(restore_companion_timeouts, &saved);
+#endif
+  if (conn->event_channel_fd > 0) {
+#ifdef CONFIG_ANDROID_COMPANION
+    if (companion_mode) {
+      socklen_t size = sizeof(struct timeval);
+      saved.active = !getsockopt(saved.fd, SOL_SOCKET, SO_RCVTIMEO, &saved.receive, &size);
+      size = sizeof(struct timeval);
+      saved.active &= !getsockopt(saved.fd, SOL_SOCKET, SO_SNDTIMEO, &saved.send, &size);
+      struct timeval timeout = {.tv_sec = 2};
+      setsockopt(conn->event_channel_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+      setsockopt(conn->event_channel_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+    }
+#endif
     result = write_encrypted(conn->event_channel_fd, &conn->ap2_pairing_context.event_cipher_bundle,
                              data, data_length);
     if ((result != -1) && ((size_t)result == data_length)) {
@@ -91,6 +129,12 @@ ssize_t ap2_event_port_send_message(rtsp_conn_info *conn, char *data, size_t dat
     debug(1, "Connection %d: attempt to send a command to the event port over a closed socket",
           conn->connection_number);
   }
+#ifdef CONFIG_ANDROID_COMPANION
+  /* 加密流发生半包或超时后不可重试旧状态，关闭此控制通道等待发送端恢复。 */
+  if (companion_mode && result <= 0 && conn->event_channel_fd > 0)
+    shutdown(conn->event_channel_fd, SHUT_RDWR);
+  pthread_cleanup_pop(1); // restore socket timeouts
+#endif
   pthread_cleanup_pop(1); // unlock the mutex
   return result;
 }

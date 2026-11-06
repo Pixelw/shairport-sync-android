@@ -207,6 +207,8 @@ plist_t paramsPlist(unsigned int send_options_number, const char *deviceUUID) {
   return params_plist;
 }
 
+static void remote_plist_cleanup(void *value) { plist_free(value); }
+
 // send a simple command -- one with a command number an no arguments.
 ssize_t ap2_event_send_simple_modern_media_remote_command(rtsp_conn_info *conn,
                                                           unsigned int command_number) {
@@ -214,12 +216,13 @@ ssize_t ap2_event_send_simple_modern_media_remote_command(rtsp_conn_info *conn,
   char command_number_string[32];
   snprintf(command_number_string, sizeof(command_number_string), "%u", command_number);
   plist_t modernMediaCommand = plist_new_dict();
+  pthread_cleanup_push(remote_plist_cleanup, modernMediaCommand);
   plist_dict_set_item(modernMediaCommand, "modernMediaRemoteCommand",
                       plist_new_string(command_number_string));
   plist_dict_set_item(modernMediaCommand, "type", plist_new_string("sendMediaRemoteCommand"));
   plist_dict_set_item(modernMediaCommand, "params", paramsPlist(0, conn->airplay_gid));
   result = ap2_event_port_post_command(conn, modernMediaCommand);
-  plist_free(modernMediaCommand);
+  pthread_cleanup_pop(1);
   return result;
 }
 
@@ -670,3 +673,24 @@ int remote_set_shuffle_mode(shuffle_status_type mode) {
   pthread_cleanup_pop(1); // release the principal_conn lock
   return handled;
 }
+
+#ifdef CONFIG_ANDROID_COMPANION
+static void remote_companion_mode_cleanup(void *unused) {
+  (void)unused; ap2_event_companion_mode(0);
+}
+int remote_simple_command_checked(simple_command_t command, int connection) {
+  if (command != rcsc_play && command != rcsc_pause && command != rcsc_next_item &&
+      command != rcsc_previous_item) return 0;
+  int result = 0;
+  if (pthread_rwlock_tryrdlock(&principal_conn_lock)) return 0;
+  pthread_cleanup_push(rwlock_unlock, &principal_conn_lock);
+  ap2_event_companion_mode(1);
+  pthread_cleanup_push(remote_companion_mode_cleanup, NULL);
+  if (principal_conn && principal_conn->connection_number == connection &&
+      principal_conn->airplay_type == ap_2 && principal_conn->event_channel_fd > 0)
+    result = ap2_event_send_simple_modern_media_remote_command(principal_conn, command) > 0 ? 1 : -1;
+  pthread_cleanup_pop(1);
+  pthread_cleanup_pop(1);
+  return result;
+}
+#endif

@@ -19,3 +19,9 @@ diagnostics = {
   log_show_time_since_last_message = "no";
   log_show_file_and_line = "yes";
 };
+
+// Companion App 可选桥接；先安装 APK 并查出其 UID，再启用并重启 SPS。
+// android_companion = {
+//   enabled = true;
+//   allowed_uid = 10000; // 必须替换为本机 org.shairport.sync.android 的实际 UID。
+// };

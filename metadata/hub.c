@@ -1,3 +1,6 @@
+#ifdef CONFIG_ANDROID_COMPANION
+#include "companion.h"
+#endif
 #include "worker.h"
 /*
  * Metadata hub and access methods.
@@ -367,15 +370,20 @@ char *metadata_write_image_file(const char *buf, int len) {
 
 int metadata_hub_process_picture(const char *data, const size_t length) {
   int changed = 0;
+#ifdef CONFIG_ANDROID_COMPANION
+  changed = sps_companion_picture(data, length);
+#endif
   if (length > 0) {
     if (data != NULL) {
       char uri[2048];
       if ((length > 16) &&
           (strcmp(config.cover_art_cache_dir, "") != 0)) { // if it's okay to write the file
         char *pathname = metadata_write_image_file(data, length);
-        snprintf(uri, sizeof(uri), "file://%s", pathname);
-        free(pathname);
-        changed = update_string_record(&metadata_store.npi.cover_art_pathname, uri);
+        if (pathname != NULL) {
+          snprintf(uri, sizeof(uri), "file://%s", pathname);
+          free(pathname);
+          changed |= update_string_record(&metadata_store.npi.cover_art_pathname, uri);
+        }
       }
     } else {
       debug(1, "faulty picture data -- data NULL with non-zero length!");
@@ -564,6 +572,16 @@ void metadata_hub_process_metadata(uint32_t type, uint32_t code, char *data, uin
   } else if (type == 'ssnc') {
     switch (code) {
     case 'conn': // a new connection -- some things might need to be reset
+#ifdef CONFIG_ANDROID_COMPANION
+      sps_companion_picture(NULL, 0);
+      invalidate_string_record(&metadata_store.client_name);
+      metadata_store.play_status = PS_NOT_AVAILABLE;
+      metadata_store.player_state = PS_NOT_AVAILABLE;
+      if (metadata_store.supported_commands_plist) {
+        plist_free(metadata_store.supported_commands_plist);
+        metadata_store.supported_commands_plist = NULL;
+      }
+#endif
       metadata_hub_reset_npi(&metadata_store.npi);
       invalidate_string_record(&metadata_store.progress_string);
       metadata_store.progress_first_timestamp = 0;
