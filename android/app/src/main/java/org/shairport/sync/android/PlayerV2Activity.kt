@@ -204,14 +204,15 @@ private fun PlayerScreen(state: PlayerSnapshot, command: (String) -> Unit) {
     }
     LaunchedEffect(controls, lastTouch) {
         if (controls) {
-            delay((5_000 - (SystemClock.elapsedRealtime() - lastTouch)).coerceIn(0, 5_000))
+            delay((20_000 - (SystemClock.elapsedRealtime() - lastTouch)).coerceIn(0, 20_000))
             controls = false
         }
     }
     val clock = currentTimeText()
-    val interaction = {
-        lastTouch = SystemClock.elapsedRealtime()
-        controls = true
+    val interaction = { lastTouch = SystemClock.elapsedRealtime() }
+    val toggleControls = {
+        controls = !controls
+        interaction()
     }
     Box(Modifier.fillMaxSize().background(Color(0xFF263945)).pointerInput(controls) {
         awaitPointerEventScope {
@@ -220,16 +221,24 @@ private fun PlayerScreen(state: PlayerSnapshot, command: (String) -> Unit) {
                 if (controls && event.changes.any { it.changedToDownIgnoreConsumed() || it.changedToUpIgnoreConsumed() }) interaction()
             }
         }
-    }) {
+    }.clickable(
+        interactionSource = remember { MutableInteractionSource() }, indication = null,
+        onClickLabel = if (controls) "隐藏播放控件" else "显示播放控件",
+        onClick = toggleControls
+    )) {
         blurred?.let {
             Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .18f)))
-        PlayerLayout(state, controls, clock, command)
+        // 子按钮会消费点击（禁用时也消费），背景只处理非按钮区域的显隐切换。
+        PlayerLayout(state, controls, clock) {
+            interaction()
+            command(it)
+        }
         // 展示态的透明触摸层吞掉首次唤出手势，避免点到尚未显示的播放按钮。
         if (!controls) Box(Modifier.fillMaxSize().clickable(
             interactionSource = remember { MutableInteractionSource() }, indication = null,
-            onClickLabel = "显示播放控件", role = Role.Button, onClick = interaction
+            onClickLabel = "显示播放控件", role = Role.Button, onClick = toggleControls
         ).semantics { contentDescription = "$clock，${state.title} · ${state.artist}，显示播放控件" })
     }
 }
