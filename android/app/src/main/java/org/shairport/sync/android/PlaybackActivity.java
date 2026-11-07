@@ -2,13 +2,39 @@
 package org.shairport.sync.android;
 
 import android.app.Activity;
-import android.content.*;
-import android.graphics.*;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.ColorFilter;
+import android.graphics.LinearGradient;
+import android.graphics.Outline;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.PixelFormat;
+import android.graphics.Rect;
+import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
-import android.os.*;
+import android.os.Bundle;
+import android.os.IBinder;
+import android.os.SystemClock;
+import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.TextUtils;
-import android.view.*;
-import android.widget.*;
+import android.text.style.TypefaceSpan;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewOutlineProvider;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 
 /**
  * 小屏横向播放页；只负责显示和用户操作，不持有原生服务。
@@ -114,6 +140,7 @@ public final class PlaybackActivity extends Activity implements SPSCompanionServ
         TextView v = new TextView(this);
         v.setTextColor(color);
         v.setTextSize(size);
+        v.setTypeface(getResources().getFont(R.font.inter_regular));
         v.setFontFeatureSettings("tnum");
         v.setEllipsize(TextUtils.TruncateAt.END);
         v.setMaxLines(1);
@@ -174,14 +201,14 @@ public final class PlaybackActivity extends Activity implements SPSCompanionServ
         details.setOrientation(LinearLayout.VERTICAL);
         content.addView(details, new LinearLayout.LayoutParams(0, -1, 0.54f));
         device = text(13, 0xCCFFFFFF);
-        device.setText(R.string.waiting_device);
+        label(device, getString(R.string.waiting_device));
         details.addView(device, row(28));
         View space = new View(this);
         details.addView(space, new LinearLayout.LayoutParams(1, 0, 1));
         title = text(28, Color.WHITE);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setTypeface(getResources().getFont(R.font.inter_bold));
         title.setMaxLines(2);
-        title.setText(R.string.waiting_title);
+        label(title, getString(R.string.waiting_title));
         details.addView(title, new LinearLayout.LayoutParams(-1, -2));
         artist = text(19, 0xDDFFFFFF);
         details.addView(artist, row(30));
@@ -234,7 +261,14 @@ public final class PlaybackActivity extends Activity implements SPSCompanionServ
     }
 
     private void label(TextView view, String value) {
-        if (!TextUtils.equals(view.getText(), value)) view.setText(value);
+        if (TextUtils.equals(view.getText(), value)) return;
+        SpannableString text = new SpannableString(value);
+        java.util.regex.Matcher han = PlayerFonts.HAN.matcher(value);
+        while (han.find()) {
+            text.setSpan(new TypefaceSpan("sans-serif"), han.start(), han.end(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        view.setText(text);
     }
 
     /**
