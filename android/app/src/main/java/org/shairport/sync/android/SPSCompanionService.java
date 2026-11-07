@@ -6,6 +6,7 @@ import android.content.*;
 import android.graphics.*;
 import android.os.*;
 import android.provider.Settings;
+import org.json.JSONException;
 import org.json.JSONObject;
 import java.io.*;
 import java.util.ArrayList;
@@ -15,6 +16,7 @@ import java.util.List;
 public final class SPSCompanionService extends Service implements CompanionConnection.Listener {
     interface Observer { /** 播放状态或超时发生变化。 */ void changed(); }
     final class LocalBinder extends Binder { SPSCompanionService service() { return SPSCompanionService.this; } }
+    private static final long METADATA_GRACE_MS = 2_000;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Observer> observers = new ArrayList<>();
     private final LocalBinder binder = new LocalBinder();
@@ -29,6 +31,7 @@ public final class SPSCompanionService extends Service implements CompanionConne
     private String message = "";
     private String savedSnapshot = "{}";
     private long lastSaved;
+    private long metadataMissingSince = -1;
     private final Runnable ticker = new Runnable() {
         /** 驱动单调时钟超时及界面进度，不持有唤醒锁。 */
         @Override public void run() {
@@ -120,11 +123,34 @@ public final class SPSCompanionService extends Service implements CompanionConne
         notifyObservers();
     }
 
+    private PlaybackState stabilizeMetadata(JSONObject value, long now) {
+        PlaybackState next = new PlaybackState(value, now);
+        // 切歌时发送端可能先清空文字，再分批发送新曲目信息。
+        boolean missing = state != null && !next.session.isEmpty() && state.session.equals(next.session)
+                && !"stopped".equals(next.state)
+                && ((!state.title.isEmpty() && next.title.isEmpty())
+                    || (!state.artist.isEmpty() && next.artist.isEmpty()));
+        if (!missing) {
+            metadataMissingSince = -1;
+            return next;
+        }
+        if (metadataMissingSince < 0) metadataMissingSince = now;
+        if (now - metadataMissingSince >= METADATA_GRACE_MS) return next;
+
+        // 短暂保留整组旧文字，避免混搭新歌名和旧艺术家。进度和控制继续使用新快照。
+        try {
+            value.put("title", state.title).put("artist", state.artist).put("album", state.album);
+            return new PlaybackState(value, now);
+        } catch (JSONException ignored) {
+            return next;
+        }
+    }
+
     /** IO 线程收到快照后，仅在主线程更新会话与界面。 */
     @Override public void state(JSONObject value) {
         main.post(() -> {
             if (destroyed) return;
-            PlaybackState next = new PlaybackState(value, SystemClock.elapsedRealtime());
+            PlaybackState next = stabilizeMetadata(value, SystemClock.elapsedRealtime());
             boolean same = state != null && state.session.equals(next.session);
             boolean terminal = "stopped".equals(next.state);
             // 结束后的空快照不覆盖最后歌曲；新会话则清除旧封面。
