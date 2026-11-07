@@ -361,7 +361,7 @@ private fun PlayerLayout(
             !controls,
             Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 24.dp, vertical = 24.dp),
+                .padding(vertical = 24.dp),
             fadeIn(tween(250)),
             fadeOut(tween(250))
         ) {
@@ -378,9 +378,10 @@ private fun PlayerLayout(
             BasicText(
                 line,
                 Modifier
-                    .widthIn(max = 680.dp)
                     .clipToBounds()
-                    .basicMarquee(iterations = Int.MAX_VALUE),
+                    .basicMarquee(iterations = Int.MAX_VALUE)
+                    // 边距随文字一起滚动，裁剪区域可延伸到屏幕两侧。
+                    .padding(horizontal = 24.dp),
                 style = TextStyle(
                     fontSize = 22.sp,
                     fontFamily = Inter,
