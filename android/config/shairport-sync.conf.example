@@ -5,7 +5,7 @@ general = {
   output_backend = "aaudio";
   mdns_backend = "dns-sd";
   // 回退到 SPS 调音时，缩小软件衰减范围，让低百分比更容易听见。
-  // volume_max_db = -2.0; // 系统音量同步启用时的默认值，可显式覆盖。
+  // volume_max_db = -4.437; // 可覆盖系统音量同步的默认 60% 内部增益。
   volume_control_profile = "flat";
   volume_range_db = 30;
   // 配合12000帧共享缓冲，增加网络播放队列余量。

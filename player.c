@@ -1,5 +1,6 @@
 #ifdef CONFIG_ANDROID_COMPANION
 #include "companion.h"
+#include "utilities/general_utilities.h"
 #endif
 #include "worker.h"
 /*
@@ -3410,17 +3411,10 @@ double suggested_volume(rtsp_conn_info *conn) {
   return response;
 }
 
-double player_reported_volume(rtsp_conn_info *conn) {
-#ifdef CONFIG_ANDROID_COMPANION
-  double volume;
-  if (sps_companion_system_volume(-1, &volume))
-    return volume;
-#endif
-  return suggested_volume(conn);
-}
-
 #ifdef CONFIG_ANDROID_COMPANION
 static int initialise_system_volume(rtsp_conn_info *conn);
+#else
+double player_reported_volume(rtsp_conn_info *conn) { return suggested_volume(conn); }
 #endif
 
 #ifdef CONFIG_METADATA
@@ -3632,7 +3626,9 @@ void *player_thread_func(void *arg) {
   conn->flush_output_flushed = 0; // only send a flush command to the output device once
   conn->flush_rtp_timestamp = 0;  // it seems this number has a special significance -- it seems to
                                   // be used as a null operand, so we'll use it like that too
+#ifndef CONFIG_ANDROID_COMPANION
   conn->fix_volume = 0x10000;
+#endif
   conn->frames_per_packet = 352; // for ALAC -- will be changed if necessary
 
 #ifdef CONFIG_METADATA
@@ -5199,7 +5195,7 @@ void *player_thread_func(void *arg) {
 
 static void player_send_volume_metadata(uint8_t vol_mode_both, double airplay_volume,
                                         double scaled_attenuation, int32_t max_db, int32_t min_db,
-                                        int32_t hw_max_db, int block_metadata) {
+                                        int32_t hw_max_db) {
 #ifdef CONFIG_METADATA
   // here, send the 'pvol' metadata message when the airplay volume information
   // is being used by shairport sync to control the output volume
@@ -5218,7 +5214,7 @@ static void player_send_volume_metadata(uint8_t vol_mode_both, double airplay_vo
   } else {
     snprintf(dv, 127, "%.2f,%.2f,%.2f,%.2f", airplay_volume, 0.0, 0.0, 0.0);
   }
-  send_ssnc_metadata('pvol', dv, strlen(dv), block_metadata);
+  send_ssnc_metadata('pvol', dv, strlen(dv), 1);
 #else
   (void)vol_mode_both;
   (void)airplay_volume;
@@ -5226,12 +5222,10 @@ static void player_send_volume_metadata(uint8_t vol_mode_both, double airplay_vo
   (void)max_db;
   (void)min_db;
   (void)hw_max_db;
-  (void)block_metadata;
 #endif
 }
 
-static void apply_legacy_volume_locked(double airplay_volume, rtsp_conn_info *conn,
-                                       int block_metadata) {
+static void apply_legacy_volume_locked(double airplay_volume, rtsp_conn_info *conn) {
   // first, see if we are hw only, sw only, both with hw attenuation on the top or both with sw
   // attenuation on top
 
@@ -5252,10 +5246,10 @@ static void apply_legacy_volume_locked(double airplay_volume, rtsp_conn_info *co
     if (config.volume_max_db_set) {
       if (((config.volume_max_db * 100) <= hw_max_db) &&
           ((config.volume_max_db * 100) >= hw_min_db))
-        hw_max_db = (int32_t)config.volume_max_db * 100;
+        hw_max_db = lround(config.volume_max_db * 100);
       else if (config.volume_range_db) {
         hw_max_db = hw_min_db;
-        sw_max_db = (config.volume_max_db * 100) - hw_min_db;
+        sw_max_db = lround(config.volume_max_db * 100) - hw_min_db;
       } else {
         warn("The maximum output level is outside the range of the hardware mixer -- ignored");
       }
@@ -5284,7 +5278,7 @@ static void apply_legacy_volume_locked(double airplay_volume, rtsp_conn_info *co
     if (config.volume_max_db_set) {
       if (((config.volume_max_db * 100) <= sw_max_db) &&
           ((config.volume_max_db * 100) >= sw_min_db))
-        sw_max_db = (int32_t)config.volume_max_db * 100;
+        sw_max_db = lround(config.volume_max_db * 100);
     }
     if (config.volume_range_db) {
       // see if the range requested exceeds the software range available
@@ -5318,7 +5312,7 @@ static void apply_legacy_volume_locked(double airplay_volume, rtsp_conn_info *co
       }
     }
     uint8_t vol_mode_both = (volume_mode == vol_both) ? 1 : 0;
-    player_send_volume_metadata(vol_mode_both, airplay_volume, 0, 0, 0, 0, block_metadata);
+    player_send_volume_metadata(vol_mode_both, airplay_volume, 0, 0, 0, 0);
   } else {
     int32_t max_db = 0, min_db = 0;
     switch (volume_mode) {
@@ -5434,7 +5428,7 @@ static void apply_legacy_volume_locked(double airplay_volume, rtsp_conn_info *co
 
     uint8_t vol_mode_both = (volume_mode == vol_both) ? 1 : 0;
     player_send_volume_metadata(vol_mode_both, airplay_volume, scaled_attenuation, max_db, min_db,
-                                hw_max_db, block_metadata);
+                                hw_max_db);
 
     if (config.output->mute)
       config.output->mute(0);
@@ -5451,73 +5445,142 @@ static void apply_legacy_volume_locked(double airplay_volume, rtsp_conn_info *co
   conn->own_airplay_volume = airplay_volume;
 }
 
-#ifdef CONFIG_ANDROID_COMPANION
-static void leave_system_volume_locked(rtsp_conn_info *conn) {
-  if (!conn->system_volume_active) return;
-  conn->system_volume_active = 0;
-  conn->system_volume_fell_back = 1;
-  conn->system_volume_notify = 0;
-}
-
-#endif
-
 void player_volume_without_notification(double airplay_volume, rtsp_conn_info *conn) {
   pthread_mutex_lock(&conn->volume_control_mutex);
-#ifdef CONFIG_ANDROID_COMPANION
-  leave_system_volume_locked(conn);
-#endif
-  apply_legacy_volume_locked(airplay_volume, conn, 1);
+  apply_legacy_volume_locked(airplay_volume, conn);
   pthread_mutex_unlock(&conn->volume_control_mutex);
 }
 
 #ifdef CONFIG_ANDROID_COMPANION
-static void apply_system_volume_locked(rtsp_conn_info *conn, double volume) {
-  int db = config.volume_max_db;
-  if (db < -96 || db > 0)
+// 覆盖 AirPlay 文本回写和 16.16 PCM 增益的舍入误差。
+static const double system_volume_tolerance_db = 0.001;
+
+static int default_system_gain(void) {
+  double db = config.volume_max_db;
+  if (!isfinite(db) || db < -96.3 || db > 0)
     db = 0; // 无效上限沿用软件混音器的默认值。
-  conn->fix_volume = lround(65536.0 * pow(10.0, db / 20.0));
-  conn->software_mute_enabled = 0; // 静音由 Android 媒体流执行。
-  conn->system_volume_active = 1;
-  conn->system_volume_fell_back = 0;
+  return lround(65536.0 * pow(10.0, db / 20.0));
+}
+
+static double unit_to_airplay_volume(double unit) {
+  return unit > 0.0 ? 30.0 * unit - 30.0 : -144.0;
+}
+
+static void publish_system_volume_locked(rtsp_conn_info *conn, double volume, int notify) {
   conn->own_airplay_volume = volume;
   conn->own_airplay_volume_set = 1;
   config.airplay_volume = volume;
+  if (notify)
+    conn->system_volume_notify = 1;
+}
+
+static double update_system_volume_locked(rtsp_conn_info *conn, int available, double system) {
+  if (conn->system_volume_state == SYSTEM_VOLUME_LEGACY)
+    return available ? system : suggested_volume(conn);
+
+  int previous_state = conn->system_volume_state;
+  if (!available)
+    conn->system_volume_state = SYSTEM_VOLUME_OFFLINE;
+  else if (previous_state == SYSTEM_VOLUME_OFFLINE)
+    conn->system_volume_state = SYSTEM_VOLUME_RECONNECTED;
+
+  double volume = system;
+  if (conn->system_volume_state != SYSTEM_VOLUME_SYNCED) {
+    double internal = conn->software_mute_enabled ? 0.0 : conn->fix_volume / 65536.0;
+    if (available)
+      internal *= airplayVolumeToUnitVolume(system);
+    volume = unit_to_airplay_volume(internal);
+  }
+
+  publish_system_volume_locked(conn, volume, previous_state != conn->system_volume_state ||
+                                                conn->own_airplay_volume != volume);
+  return volume;
+}
+
+static double refresh_system_volume_locked(rtsp_conn_info *conn) {
+  double system = 0.0;
+  int available = sps_companion_system_volume(-1, &system);
+  return update_system_volume_locked(conn, available, system);
+}
+
+double player_reported_volume(rtsp_conn_info *conn) {
+  if (!conn) return suggested_volume(NULL);
+  int prior;
+  lx_worker_defer(LX_STOP_DEFERRED, &prior);
+  pthread_mutex_lock(&conn->volume_control_mutex);
+  double volume = refresh_system_volume_locked(conn);
+  if (conn->system_volume_state != SYSTEM_VOLUME_LEGACY) {
+    conn->system_volume_advertised = 1;
+    conn->system_volume_last_advertised = volume;
+  }
+  pthread_mutex_unlock(&conn->volume_control_mutex);
+  lx_worker_defer(prior, NULL);
+  return volume;
+}
+
+static void enter_system_volume_locked(rtsp_conn_info *conn, double volume, int notify) {
+  conn->fix_volume = default_system_gain();
+  conn->software_mute_enabled = 0;
+  conn->system_volume_state = SYSTEM_VOLUME_SYNCED;
+  publish_system_volume_locked(conn, volume, notify);
 }
 
 static int initialise_system_volume(rtsp_conn_info *conn) {
   int prior;
   lx_worker_defer(LX_STOP_DEFERRED, &prior);
   pthread_mutex_lock(&conn->volume_control_mutex);
-  double volume;
-  int handled = !conn->system_volume_fell_back && sps_companion_system_volume(-1, &volume);
-  if (handled)
-    apply_system_volume_locked(conn, volume);
-  else
-    leave_system_volume_locked(conn);
+  int handled = conn->system_volume_state != SYSTEM_VOLUME_LEGACY;
+  if (handled) {
+    refresh_system_volume_locked(conn);
+  } else {
+    double system;
+    handled = sps_companion_system_volume(-1, &system);
+    if (handled)
+      enter_system_volume_locked(conn, system, 0);
+  }
   pthread_mutex_unlock(&conn->volume_control_mutex);
   lx_worker_defer(prior, NULL);
   return handled;
 }
 
 int player_try_system_volume(double volume, rtsp_conn_info *conn, int notify_sender) {
-  if (!config.android_sync_system_volume || config.ignore_volume_control ||
-      !isfinite(volume) || (volume != -144.0 && (volume < -30.0 || volume > 0.0)))
+  if (!config.android_sync_system_volume || config.ignore_volume_control)
     return 0;
+
   int prior;
   lx_worker_defer(LX_STOP_DEFERRED, &prior);
   pthread_mutex_lock(&conn->volume_control_mutex);
-  // -30 是非静音范围的下端，保留为至少一个系统档位。
-  int request = volume == -144.0 ? 0 : lround((volume + 30.0) * (1000000.0 / 30.0));
-  if (volume != -144.0 && request == 0) request = 1;
-  double actual;
-  int handled = sps_companion_system_volume(request, &actual);
-  if (handled) {
-    int changed = !conn->system_volume_active || conn->own_airplay_volume != actual;
-    apply_system_volume_locked(conn, actual);
-    conn->system_volume_notify = fabs(actual - volume) > 0.0001 ||
-                                 (notify_sender && (changed || conn->system_volume_notify));
-  } else {
-    leave_system_volume_locked(conn);
+  int managed = conn->system_volume_state != SYSTEM_VOLUME_LEGACY;
+  int handled = managed;
+  if (isfinite(volume) && (volume == -144.0 || (volume >= -30.0 && volume <= 0.0))) {
+    // 只把发送端对最近回报的同值请求视为回写，本地遥控命令仍可接管。
+    int echo = managed && !notify_sender &&
+               (fabs(conn->own_airplay_volume - volume) <= system_volume_tolerance_db ||
+                (conn->system_volume_advertised &&
+                 fabs(conn->system_volume_last_advertised - volume) <= system_volume_tolerance_db));
+    if (!echo) {
+      double unit = airplayVolumeToUnitVolume(volume);
+      int request = lround(unit * 1000000.0);
+      if (volume != -144.0 && request == 0) request = 1;
+      double actual;
+      if (sps_companion_system_volume(request, &actual)) {
+        int notify = conn->system_volume_state != SYSTEM_VOLUME_SYNCED ||
+                     fabs(actual - volume) > system_volume_tolerance_db ||
+                     (notify_sender && conn->own_airplay_volume != actual);
+        enter_system_volume_locked(conn, actual, notify);
+        handled = 1;
+      } else if (managed) {
+        int gain = lround(unit * 65536.0);
+        int maximum = default_system_gain();
+        conn->fix_volume = gain < maximum ? gain : maximum;
+        conn->software_mute_enabled = gain == 0;
+        // 系统可能仅拒绝了写入（例如 LX04 的流静音），此时仍可读回媒体档位。
+        double system = 0.0;
+        int available = sps_companion_system_volume(-1, &system);
+        conn->system_volume_state = SYSTEM_VOLUME_OFFLINE;
+        update_system_volume_locked(conn, available, system);
+      }
+    }
   }
   pthread_mutex_unlock(&conn->volume_control_mutex);
   lx_worker_defer(prior, NULL);
@@ -5528,19 +5591,8 @@ void player_poll_system_volume(rtsp_conn_info *conn) {
   int prior;
   lx_worker_defer(LX_STOP_DEFERRED, &prior);
   if (!pthread_mutex_trylock(&conn->volume_control_mutex)) {
-    if (conn->system_volume_active) {
-      double actual;
-      double previous = conn->own_airplay_volume;
-      if (!sps_companion_system_volume(-1, &actual)) {
-        leave_system_volume_locked(conn);
-        apply_legacy_volume_locked(previous, conn, 0);
-        debug(2, "Connection %d: Companion system volume unavailable; restored SPS volume.",
-              conn->connection_number);
-      } else if (previous != actual) {
-        apply_system_volume_locked(conn, actual);
-        conn->system_volume_notify = 1;
-      }
-    }
+    if (conn->system_volume_state != SYSTEM_VOLUME_LEGACY)
+      refresh_system_volume_locked(conn);
     pthread_mutex_unlock(&conn->volume_control_mutex);
   }
   lx_worker_defer(prior, NULL);
@@ -5548,10 +5600,12 @@ void player_poll_system_volume(rtsp_conn_info *conn) {
 
 int player_take_system_volume_notification(rtsp_conn_info *conn, double *volume) {
   if (pthread_mutex_trylock(&conn->volume_control_mutex)) return 0;
-  int pending = conn->system_volume_active && conn->system_volume_notify;
+  int pending = conn->system_volume_notify;
   if (pending) {
     *volume = conn->own_airplay_volume;
     conn->system_volume_notify = 0;
+    conn->system_volume_advertised = 1;
+    conn->system_volume_last_advertised = *volume;
   }
   pthread_mutex_unlock(&conn->volume_control_mutex);
   return pending;

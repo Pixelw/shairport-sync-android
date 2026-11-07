@@ -980,7 +980,11 @@ int parse_options(int argc, char **argv) {
       /* Get the optional volume_max_db setting. */
       if (config_lookup_float(config.cfg, "general.volume_max_db", &dvalue)) {
         // debug(1, "Max volume setting of %f dB", dvalue);
+#ifdef __ANDROID__
         config.volume_max_db = dvalue;
+#else
+        config.volume_max_db = trunc(dvalue);
+#endif
         config.volume_max_db_set = 1;
       }
 
@@ -2962,8 +2966,10 @@ int main(int argc, char **argv) {
     config_lookup_bool(config.cfg, "android.sync_system_volume", &sync_system_volume);
   config.android_sync_system_volume = sync_system_volume && !strcmp(config.output->name, "aaudio");
   if (config.android_sync_system_volume && !config.volume_max_db_set) {
-    config.volume_max_db = -2;
+    config.volume_max_db = 20.0 * log10(0.60);
     config.volume_max_db_set = 1;
+  } else if (!config.android_sync_system_volume) {
+    config.volume_max_db = trunc(config.volume_max_db);
   }
 #endif
   debug(1, "audio backend is \"%s\".", config.output_name);
@@ -3302,7 +3308,7 @@ int main(int argc, char **argv) {
   debug(option_print_level, "default airplay volume is: %.6f.", config.default_airplay_volume);
   debug(option_print_level, "ignore_volume_control is %d.", config.ignore_volume_control);
   if (config.volume_max_db_set)
-    debug(option_print_level, "volume_max_db is %d.", config.volume_max_db);
+    debug(option_print_level, "volume_max_db is %.6g.", config.volume_max_db);
   else
     debug(option_print_level, "volume_max_db is not set");
   debug(option_print_level,

@@ -372,9 +372,15 @@ typedef struct {
   _Atomic int fix_volume; // 音频线程读取的定点增益。
   _Atomic double own_airplay_volume; // 该会话对外报告的 AirPlay 音量。
   _Atomic int own_airplay_volume_set; // 该会话是否已获得音量。
-  int system_volume_active; // 由音量锁保护的系统音量接管状态。
-  int system_volume_fell_back; // 掉线后须由显式调音重新接管。
+  enum {
+    SYSTEM_VOLUME_LEGACY, // 该会话从未成功接管系统音量。
+    SYSTEM_VOLUME_SYNCED, // 系统负责调音，SPS 固定增益。
+    SYSTEM_VOLUME_OFFLINE, // 仅调整 SPS 内部增益。
+    SYSTEM_VOLUME_RECONNECTED, // 已恢复查询，等待发送端调音接管。
+  } system_volume_state; // 由音量锁保护的会话状态。
   int system_volume_notify; // 有待发送的最新系统音量事件。
+  int system_volume_advertised; // 该会话是否已发送过托管音量。
+  double system_volume_last_advertised; // 最近发送给发送端的值，用于识别回写。
 #else
   int fix_volume;
   double own_airplay_volume;
@@ -657,9 +663,9 @@ void player_volume(double f, rtsp_conn_info *conn);
 /* 读取当前系统音量，读取失败时返回原有会话建议值。 */
 double player_reported_volume(rtsp_conn_info *conn);
 #ifdef CONFIG_ANDROID_COMPANION
-/* 主会话尝试设置系统音量；本地发起时通知发送端，未接管时由调用方回退。 */
+/* 处理主会话的同步或离线音量，返回零时由调用方使用原调音逻辑。 */
 int player_try_system_volume(double volume, rtsp_conn_info *conn, int notify_sender);
-/* 主会话刷新系统音量，服务失效时恢复 SPS 音量。 */
+/* 刷新主会话的系统音量及连接状态，不修改内部增益。 */
 void player_poll_system_volume(rtsp_conn_info *conn);
 /* 取出当前会话最新待发送的系统音量。 */
 int player_take_system_volume_notification(rtsp_conn_info *conn, double *volume);

@@ -260,7 +260,7 @@ typedef struct {
   int android_sync_system_volume; // AAudio 是否通过 Companion 同步媒体音量。
 #endif
   int volume_max_db_set; // set to 1 if a maximum volume db has been set
-  int volume_max_db;
+  double volume_max_db; // 最大输出电平，单位 dB。
   int no_sync;             // disable synchronisation, even if it's available
   int no_mmap;             // disable use of mmap-based output, even if it's available
   double resync_threshold; // if it gets out of whack by more than this number of seconds, do a

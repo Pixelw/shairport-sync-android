@@ -53,15 +53,17 @@ App 不需要 root 授权。SELinux 若禁止 socket 通信则会重连，不能
 
 `android.sync_system_volume` 默认为 `true`。同步需要 AAudio、已启用的
 Companion 桥接和允许 SPS 调音的配置。Android AAudio 在开关开启时，
-未指定 `general.volume_max_db` 则使用 −2.0 dB（约 79.4% 线性增益），
-显式设置优先。关闭同步后，未指定该项时沿用原有 0 dB 上限。
+未指定 `general.volume_max_db` 时使用 60% 线性增益（约 −4.437 dB）。
+显式设置优先，支持小数 dB。关闭同步后，未指定该项时沿用原有 0 dB 上限。
 
-接入和查询时返回 Android 媒体音量。同步期间 SPS 固定在生效的
-`volume_max_db`，发送端通过 CompanionService 改变 `STREAM_MUSIC` 档位。
-设备端音量变化通过 AirPlay 2 事件通知发送端。Android 媒体音量影响使用同一音频流的应用。
-服务或对应的系统音量操作不可用时，SPS 恢复原调音曲线和静音行为，并保留生效的最大增益。
-例如 LX04 的媒体流最低档为 1，固件拒绝媒体流静音，SPS 会执行软件静音。
-服务重连后，当前会话在下一次发送端调音时重新接管，新会话可在初始化时接管。
+同步期间 SPS 使用固定增益，发送端通过 CompanionService 调整和读取 `STREAM_MUSIC` 档位。
+已接管的会话检测到 Companion 掉线时保留当前内部增益和软件静音状态，向发送端回报
+实际内部音量。后续按发送端滑块的百分比调整线性增益，最高为配置的增益。
+若 Android 拒绝媒体流静音（例如 LX04），SPS 使用软件静音。
+
+服务恢复后，回报 Android 媒体音量与当前内部增益的乘积。发送端下一次不同的调音请求
+直接设置系统档位，成功后内部增益恢复默认值。查询与 AirPlay 2 音量事件使用同一回报值，
+发送端回写相同值时保持当前增益。Android 媒体音量会影响使用同一音频流的应用。
 
 音量端点为 `org.shairport.sync.android.volume.v1`，与状态桥接使用相同的 UID
 信任边界。每次连接处理一个 8 字节请求与响应，均以网络字节序编码。

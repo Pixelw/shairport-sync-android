@@ -4154,6 +4154,9 @@ static void *rtsp_conversation_thread_func(void *pconn) {
   if (rc)
     die("Connection %d: error %d initialising flow control condition variable.",
         conn->connection_number, rc);
+#ifdef CONFIG_ANDROID_COMPANION
+  conn->fix_volume = 0x10000;
+#endif
   rc = pthread_mutex_init(&conn->volume_control_mutex, NULL);
   if (rc)
     die("Connection %d: error %d initialising volume_control_mutex.", conn->connection_number, rc);
