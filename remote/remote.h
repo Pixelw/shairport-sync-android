@@ -48,6 +48,8 @@ void remote_simple_command(simple_command_t command);
 
 ssize_t ap2_event_send_dev_mule(unsigned int command_number);
 #ifdef CONFIG_ANDROID_COMPANION
+/* 将系统媒体档位通过 AirPlay 2 事件通道通知当前发送端。 */
+ssize_t ap2_event_send_unit_volume_notification(rtsp_conn_info *conn, double volume);
 /* 向指定会话发送基础命令；返回 1 表示发送端接受，0 不可用，-1 发送失败。 */
 int remote_simple_command_checked(simple_command_t command, int connection);
 #endif

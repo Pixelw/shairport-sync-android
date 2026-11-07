@@ -92,11 +92,11 @@ an optional -20 ms offset for that combination only.
 Android logs default to logcat tags `SPS-main` and `SPS-nqptp`. Either executable
 accepts `--log-output=stderr` before normal options. Upstream message text is
 retained; receiver verbosity defaults to 1 with playback statistics enabled.
-Configuration can override the diagnostic settings. Volume remains software
-attenuation: Android system-volume synchronization and AudioFocus ducking are
-not implemented. External command hooks, FIFO output and shell-based config
-display are deliberately disabled in this port. The optional Companion bridge uses
-a UID-checked local Unix socket and remains disabled until configured.
+Configuration can override the diagnostic settings. AAudio can synchronize the
+Android media volume through CompanionService and falls back to software attenuation
+when the service is unavailable. See [Companion App](COMPANION.md) for the volume
+configuration and UID-checked bridge setup. External command hooks, FIFO output
+and shell-based config display are deliberately disabled in this port.
 
 ## Validation boundaries
 

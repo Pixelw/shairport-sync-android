@@ -291,7 +291,11 @@ typedef struct {
                              // otherwise
   uint32_t maximum_latency;  // set if an a=max-latency: line appears in the ANNOUNCE message; zero
                              // otherwise
+#ifdef CONFIG_ANDROID_COMPANION
+  _Atomic int software_mute_enabled; // 音频线程读取的软件静音标记。
+#else
   int software_mute_enabled; // if we don't have a real mute that we can use
+#endif
   int fd;
   int authorized;   // set if a password is required and has been supplied or not required. Also
                     // always set in AirPlay 2 mode.
@@ -364,9 +368,18 @@ typedef struct {
   pthread_cond_t flowcontrol;
   pthread_mutex_t ab_mutex, flush_mutex, volume_control_mutex, player_create_delete_mutex;
 
+#ifdef CONFIG_ANDROID_COMPANION
+  _Atomic int fix_volume; // 音频线程读取的定点增益。
+  _Atomic double own_airplay_volume; // 该会话对外报告的 AirPlay 音量。
+  _Atomic int own_airplay_volume_set; // 该会话是否已获得音量。
+  int system_volume_active; // 由音量锁保护的系统音量接管状态。
+  int system_volume_fell_back; // 掉线后须由显式调音重新接管。
+  int system_volume_notify; // 有待发送的最新系统音量事件。
+#else
   int fix_volume;
   double own_airplay_volume;
   int own_airplay_volume_set;
+#endif
 
   int ab_buffering, ab_synced;
   uint32_t first_packet_timestamp;
@@ -641,6 +654,16 @@ int player_play(rtsp_conn_info *conn);
 int player_stop(rtsp_conn_info *conn);
 
 void player_volume(double f, rtsp_conn_info *conn);
+/* 读取当前系统音量，读取失败时返回原有会话建议值。 */
+double player_reported_volume(rtsp_conn_info *conn);
+#ifdef CONFIG_ANDROID_COMPANION
+/* 主会话尝试设置系统音量；本地发起时通知发送端，未接管时由调用方回退。 */
+int player_try_system_volume(double volume, rtsp_conn_info *conn, int notify_sender);
+/* 主会话刷新系统音量，服务失效时恢复 SPS 音量。 */
+void player_poll_system_volume(rtsp_conn_info *conn);
+/* 取出当前会话最新待发送的系统音量。 */
+int player_take_system_volume_notification(rtsp_conn_info *conn, double *volume);
+#endif
 void player_volume_without_notification(double f, rtsp_conn_info *conn);
 void player_flush(uint32_t timestamp, rtsp_conn_info *conn);
 // void player_full_flush(rtsp_conn_info *conn);

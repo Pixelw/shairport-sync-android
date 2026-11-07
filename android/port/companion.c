@@ -2,6 +2,8 @@
  * Copyright (c) 2026 Pixelw and contributors
  */
 #include "companion.h"
+#include "ap2_event_receiver.h"
+#include "utilities/general_utilities.h"
 #include "common.h"
 #include "metadata/hub.h"
 #include "remote/remote.h"
@@ -18,6 +20,9 @@
 #include <stdatomic.h>
 
 #define MAX_ART (4U * 1024U * 1024U)
+#define VOLUME_SOCKET_NAME "org.shairport.sync.android.volume.v1"
+#define VOLUME_MAGIC 0x53505631U
+#define VOLUME_SCALE 1000000U
 #define SOCKET_NAME "org.shairport.sync.android.companion.v1"
 extern pthread_rwlock_t metadata_hub_re_lock;
 static pthread_mutex_t image_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -31,7 +36,9 @@ static uint32_t timing_timestamp;
 static atomic_int enabled;
 static int started;
 static uid_t allowed_uid;
-static pthread_t thread;
+static pthread_t thread, volume_thread, volume_events_thread;
+static atomic_int volume_enabled;
+static int volume_events_started;
 static char instance[80];
 /* 仅桥接线程拥有这些资源，根清理器统一释放。 */
 static int listener = -1, client = -1;
@@ -76,15 +83,16 @@ static void cleanup(void *unused) {
   free(json); json = NULL;
 }
 
-/* 所有 socket 都是非阻塞的；一次消息最多占用两秒。 */
-static int transfer(int fd, void *data, size_t length, int writing) {
-  size_t done = 0;
+static int64_t monotonic_ms(void) {
   struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
-  int64_t deadline = now.tv_sec * 1000LL + now.tv_nsec / 1000000 + 2000;
+  return now.tv_sec * 1000LL + now.tv_nsec / 1000000;
+}
+
+static int transfer_until(int fd, void *data, size_t length, int writing, int64_t deadline) {
+  size_t done = 0;
   while (done < length) {
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    int64_t left = deadline - now.tv_sec * 1000LL - now.tv_nsec / 1000000;
+    int64_t left = deadline - monotonic_ms();
     if (left <= 0) return -1;
     struct pollfd p = {.fd = fd, .events = writing ? POLLOUT : POLLIN};
     if (lx_worker_poll(&p, 1, left) <= 0 || (p.revents & (POLLERR | POLLNVAL))) return -1;
@@ -94,6 +102,71 @@ static int transfer(int fd, void *data, size_t length, int writing) {
     else if (n == 0 || (errno != EAGAIN && errno != EINTR)) return -1;
   }
   return 0;
+}
+
+/* 元数据桥接沿用原有的单次传输时限。 */
+static int transfer(int fd, void *data, size_t length, int writing) {
+  return transfer_until(fd, data, length, writing, monotonic_ms() + 2000);
+}
+
+int sps_companion_system_volume(int request, double *volume) {
+  if (!volume_enabled) return 0;
+  int result = 0, prior;
+  lx_worker_defer(LX_STOP_DEFERRED, &prior);
+  int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+  if (fd >= 0) {
+    int64_t deadline = monotonic_ms() + 200;
+    struct sockaddr_un addr = {.sun_family = AF_UNIX};
+    memcpy(addr.sun_path + 1, VOLUME_SOCKET_NAME, sizeof(VOLUME_SOCKET_NAME) - 1);
+    struct ucred peer;
+    socklen_t peer_size = sizeof(peer);
+    uint32_t message[] = {htonl(VOLUME_MAGIC), htonl((uint32_t)request)};
+    /* 抽象 Unix stream 在监听队列已满时返回 EAGAIN，直接回退。 */
+    if (!connect(fd, (struct sockaddr *)&addr,
+                 offsetof(struct sockaddr_un, sun_path) + sizeof(VOLUME_SOCKET_NAME)) &&
+        !getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &peer, &peer_size) && peer.uid == allowed_uid &&
+        !transfer_until(fd, message, sizeof(message), 1, deadline) &&
+        !transfer_until(fd, message, sizeof(message), 0, deadline) &&
+        ntohl(message[0]) == VOLUME_MAGIC && ntohl(message[1]) <= VOLUME_SCALE) {
+      uint32_t value = ntohl(message[1]);
+      *volume = value == 0 ? -144.0 : 30.0 * value / VOLUME_SCALE - 30.0;
+      result = 1;
+    }
+    close(fd);
+  }
+  lx_worker_defer(prior, NULL);
+  return result;
+}
+
+static void *poll_volume(void *unused) {
+  (void)unused;
+  lx_worker_ready();
+  for (;;) {
+    lx_worker_poll(NULL, 0, 250);
+    if (pthread_rwlock_tryrdlock(&principal_conn_lock)) continue;
+    pthread_cleanup_push(rwlock_unlock, &principal_conn_lock);
+    if (principal_conn) player_poll_system_volume(principal_conn);
+    pthread_cleanup_pop(1);
+  }
+  return NULL;
+}
+
+static void *send_volume_events(void *unused) {
+  (void)unused;
+  lx_worker_ready();
+  ap2_event_companion_mode(1);
+  for (;;) {
+    lx_worker_poll(NULL, 0, 100);
+    if (pthread_rwlock_tryrdlock(&principal_conn_lock)) continue;
+    pthread_cleanup_push(rwlock_unlock, &principal_conn_lock);
+    double volume;
+    if (principal_conn && principal_conn->airplay_type == ap_2 &&
+        principal_conn->event_channel_fd > 0 &&
+        player_take_system_volume_notification(principal_conn, &volume))
+      ap2_event_send_unit_volume_notification(principal_conn, airplayVolumeToUnitVolume(volume));
+    pthread_cleanup_pop(1);
+  }
+  return NULL;
 }
 
 static int packet(unsigned type, const void *data, uint32_t length) {
@@ -315,10 +388,31 @@ void sps_companion_start(void) {
   if (lx_worker_create(&thread, NULL, serve, NULL)) {
     enabled = 0; cleanup(NULL); warn("Companion: cannot create bridge worker.");
   } else started = 1;
+  if (started && config.android_sync_system_volume && !config.ignore_volume_control) {
+    if (lx_worker_create(&volume_thread, NULL, poll_volume, NULL)) {
+      warn("Companion: cannot create system volume worker.");
+      return;
+    }
+    volume_enabled = 1;
+    if (lx_worker_create(&volume_events_thread, NULL, send_volume_events, NULL))
+      warn("Companion: cannot create system volume event worker.");
+    else
+      volume_events_started = 1;
+  }
 }
 
 void sps_companion_stop(void) {
   if (!started) return;
+  if (volume_events_started) {
+    lx_worker_request_stop(volume_events_thread);
+    lx_worker_join(volume_events_thread, NULL);
+    volume_events_started = 0;
+  }
+  if (volume_enabled) {
+    volume_enabled = 0;
+    lx_worker_request_stop(volume_thread);
+    lx_worker_join(volume_thread, NULL);
+  }
   lx_worker_request_stop(thread); lx_worker_join(thread, NULL);
   started = 0;
   sps_companion_picture(NULL, 0);

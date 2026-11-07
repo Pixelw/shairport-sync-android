@@ -3,7 +3,7 @@
 Shairport Sync Android 是本机播放信息与控制界面。`SPSCompanionService` 使用
 Android 前台服务、低优先级通知、`START_STICKY` 和开机广播维持监听。首次手动
 打开后默认开机启动；系统资源限制、厂商策略和用户强行停止仍可阻止恢复。
-它不安装、启动或守护 SPS/NQPTP，也不管理系统音量和 AudioFocus。
+它不安装、启动或守护 SPS/NQPTP，也不管理 AudioFocus。
 App 退出或被杀不会停止原生播放；后台未连上时显示连接状态。
 
 ## 构建与部署
@@ -48,6 +48,26 @@ android_companion = {
 专用低权限域、跨用户运行和 root 之外的运行身份需要后续适配与验证。
 App 不需要 root 授权。SELinux 若禁止 socket 通信则会重连，不能因此声称该域可用。
 封面通过内存桥接传输，不需要 App 读取 SPS 的文件目录；已有上游封面缓存配置仍独立生效。
+
+## Android 系统音量
+
+`android.sync_system_volume` 默认为 `true`。同步需要 AAudio、已启用的
+Companion 桥接和允许 SPS 调音的配置。Android AAudio 在开关开启时，
+未指定 `general.volume_max_db` 则使用 −2.0 dB（约 79.4% 线性增益），
+显式设置优先。关闭同步后，未指定该项时沿用原有 0 dB 上限。
+
+接入和查询时返回 Android 媒体音量。同步期间 SPS 固定在生效的
+`volume_max_db`，发送端通过 CompanionService 改变 `STREAM_MUSIC` 档位。
+设备端音量变化通过 AirPlay 2 事件通知发送端。Android 媒体音量影响使用同一音频流的应用。
+服务或对应的系统音量操作不可用时，SPS 恢复原调音曲线和静音行为，并保留生效的最大增益。
+例如 LX04 的媒体流最低档为 1，固件拒绝媒体流静音，SPS 会执行软件静音。
+服务重连后，当前会话在下一次发送端调音时重新接管，新会话可在初始化时接管。
+
+音量端点为 `org.shairport.sync.android.volume.v1`，与状态桥接使用相同的 UID
+信任边界。每次连接处理一个 8 字节请求与响应，均以网络字节序编码。
+首字段为 `0x53505631`，次字段为有符号整数，范围 0 到 1000000 表示媒体音量。
+请求的 −1 表示查询，响应的 −1 表示接口不可用。SPS 使用 200 ms 总时限，
+活动同步会话每 250 ms 查询一次，AirPlay 通知使用独立线程。
 
 ## 页面行为
 

@@ -393,7 +393,10 @@ void ap2_remote_set_volume(double volume) {
     double present_unit_volume = airplayVolumeToUnitVolume(config.airplay_volume);
     double desired_unit_volume = airplayVolumeToUnitVolume(volume);
 
-    if (principal_conn != NULL) {
+#ifdef CONFIG_ANDROID_COMPANION
+    if (!player_try_system_volume(volume, principal_conn, 1))
+#endif
+    {
       // It seems that a large change of the notified volume, e.g. from 1.0 to 0.0, evokes
       // a bug in Apple Music on macOS Tahoe, causing the local (mac) volume to jump.
       // So here, we notify changes in 0.09 increments with a short delay between them.
@@ -412,8 +415,6 @@ void ap2_remote_set_volume(double volume) {
         lx_worker_usleep(10000);
       }
       player_volume(volume, principal_conn);
-    } else {
-      config.airplay_volume = volume;
     }
   }
   pthread_cleanup_pop(1); // release the principal_conn lock
@@ -448,7 +449,10 @@ void remote_increment_volume(int up) {
 
     double desired_unit_volume = airplayVolumeToUnitVolume(desired_volume);
 
-    if (principal_conn != NULL) {
+#ifdef CONFIG_ANDROID_COMPANION
+    if (!player_try_system_volume(desired_volume, principal_conn, 1))
+#endif
+    {
       ap2_event_send_unit_volume_notification(principal_conn, desired_unit_volume);
       debug(4, "remote_increment_volume set unit volume to %.3f.", desired_unit_volume);
       player_volume(desired_volume, principal_conn);

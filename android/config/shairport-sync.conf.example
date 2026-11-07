@@ -4,7 +4,8 @@ general = {
   service_type = "airplay2";
   output_backend = "aaudio";
   mdns_backend = "dns-sd";
-  // 缩小软件衰减范围，让低百分比更容易听见；最高增益与静音语义不变。
+  // 回退到 SPS 调音时，缩小软件衰减范围，让低百分比更容易听见。
+  // volume_max_db = -2.0; // 系统音量同步启用时的默认值，可显式覆盖。
   volume_control_profile = "flat";
   volume_range_db = 30;
   // 配合12000帧共享缓冲，增加网络播放队列余量。
@@ -25,3 +26,7 @@ diagnostics = {
 //   enabled = true;
 //   allowed_uid = 10000; // 必须替换为本机 org.shairport.sync.android 的实际 UID。
 // };
+
+android = {
+  sync_system_volume = true; // 默认启用；同步还需要上方的 Companion 桥接。
+};

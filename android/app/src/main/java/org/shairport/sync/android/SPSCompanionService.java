@@ -22,6 +22,7 @@ public final class SPSCompanionService extends Service implements CompanionConne
     private final LocalBinder binder = new LocalBinder();
     private final SessionLifecycle lifecycle = new SessionLifecycle();
     private CompanionConnection connection;
+    private SystemVolumeEndpoint systemVolume;
     private SharedPreferences prefs;
     private PlaybackState state;
     private Bitmap artwork;
@@ -70,6 +71,8 @@ public final class SPSCompanionService extends Service implements CompanionConne
         prefs.edit().putInt("boot", boot).apply();
         lifecycle.tick(SystemClock.elapsedRealtime());
         connection = new CompanionConnection(this); connection.start();
+        systemVolume = new SystemVolumeEndpoint(getSystemService(android.media.AudioManager.class));
+        systemVolume.start();
         main.post(ticker);
     }
 
@@ -79,6 +82,7 @@ public final class SPSCompanionService extends Service implements CompanionConne
     @Override public IBinder onBind(Intent intent) { return binder; }
     /** 关闭 socket 唤醒 IO，并移除本服务注册的回调。 */
     @Override public void onDestroy() {
+        systemVolume.close();
         destroyed = true; save(); connection.close(); main.removeCallbacksAndMessages(null); observers.clear();
         super.onDestroy();
     }

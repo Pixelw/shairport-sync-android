@@ -189,7 +189,11 @@ typedef struct {
   pthread_mutex_t lock;
   config_t *cfg;
   int endianness;
+#ifdef CONFIG_ANDROID_COMPANION
+  _Atomic double airplay_volume; // 最近一次生效的 AirPlay 音量。
+#else
   double airplay_volume; // stored here for reloading when necessary
+#endif
   double default_airplay_volume;
   char *appName; // normally the app is called shairport-syn, but it may be symlinked
   char *password;
@@ -252,6 +256,9 @@ typedef struct {
   int udp_port_base;
   int udp_port_range;
   int ignore_volume_control;
+#ifdef __ANDROID__
+  int android_sync_system_volume; // AAudio 是否通过 Companion 同步媒体音量。
+#endif
   int volume_max_db_set; // set to 1 if a maximum volume db has been set
   int volume_max_db;
   int no_sync;             // disable synchronisation, even if it's available

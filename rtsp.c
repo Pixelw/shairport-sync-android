@@ -1162,7 +1162,7 @@ plist_t generateInfoPlist(rtsp_conn_info *conn) {
     snprintf(senderAddress, sizeof(senderAddress), "%s:%u", conn->client_ip_string,
              conn->client_rtsp_port);
     plist_dict_set_item(response_plist, "senderAddress", plist_new_string(senderAddress));
-    plist_dict_set_item(response_plist, "initialVolume", plist_new_real(suggested_volume(conn)));
+    plist_dict_set_item(response_plist, "initialVolume", plist_new_real(player_reported_volume(conn)));
     plist_dict_set_item(response_plist, "vv", plist_new_uint(config.vv));
     // Local volume handling must not affect the volume capability advertised to the sender.
     plist_dict_set_item(response_plist, "volumeControlType",
@@ -3187,7 +3187,10 @@ void handle_set_parameter_parameter(rtsp_conn_info *conn, rtsp_message *req,
       pthread_cleanup_push(rwlock_unlock, (void *)&principal_conn_lock);
       if (principal_conn == conn) {
         debug(3, "Connection %d: set player volume to %.3f.", conn->connection_number, volume);
-        player_volume(volume, conn);
+#ifdef CONFIG_ANDROID_COMPANION
+        if (!player_try_system_volume(volume, conn, 0))
+#endif
+          player_volume(volume, conn);
         debug(3, "Connection %d: set player volume to %.3f success.", conn->connection_number,
               volume);
       } else {
@@ -3199,7 +3202,8 @@ void handle_set_parameter_parameter(rtsp_conn_info *conn, rtsp_message *req,
                 conn->connection_number, volume);
       }
       if (conn != NULL) {
-        conn->own_airplay_volume = volume;
+        if (principal_conn != conn)
+          conn->own_airplay_volume = volume;
         conn->own_airplay_volume_set = 1;
       }
       pthread_cleanup_pop(1); // release the principal_conn lock
@@ -3261,7 +3265,7 @@ static void handle_set_parameter_metadata(__attribute__((unused)) rtsp_conn_info
 
 #endif
 
-static void handle_get_parameter(__attribute__((unused)) rtsp_conn_info *conn, rtsp_message *req,
+static void handle_get_parameter(rtsp_conn_info *conn, rtsp_message *req,
                                  rtsp_message *resp) {
   // debug(1, "Connection %d: GET_PARAMETER", conn->connection_number);
   // debug_print_msg_headers(1,req);
@@ -3269,13 +3273,13 @@ static void handle_get_parameter(__attribute__((unused)) rtsp_conn_info *conn, r
 
   if ((req->content) && (req->contentlength == strlen("volume\r\n")) &&
       strstr(req->content, "volume") == req->content) {
-    debug(2, "Connection %d: current volume (%.6f) requested", conn->connection_number,
-          suggested_volume(conn));
+    double volume = player_reported_volume(conn);
+    debug(2, "Connection %d: current volume (%.6f) requested", conn->connection_number, volume);
 
     char *p = malloc(128); // will be automatically deallocated with the response is deleted
     if (p) {
       resp->content = p;
-      resp->contentlength = snprintf(p, 128, "\r\nvolume: %.6f\r\n", suggested_volume(conn));
+      resp->contentlength = snprintf(p, 128, "\r\nvolume: %.6f\r\n", volume);
     } else {
       debug(1, "Couldn't allocate space for a response.");
     }

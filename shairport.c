@@ -2956,6 +2956,16 @@ int main(int argc, char **argv) {
         "not been included in this build of Shairport Sync.",
         config.output_name == NULL ? "<unspecified>" : config.output_name);
   }
+#ifdef __ANDROID__
+  int sync_system_volume = 1;
+  if (config.cfg)
+    config_lookup_bool(config.cfg, "android.sync_system_volume", &sync_system_volume);
+  config.android_sync_system_volume = sync_system_volume && !strcmp(config.output->name, "aaudio");
+  if (config.android_sync_system_volume && !config.volume_max_db_set) {
+    config.volume_max_db = -2;
+    config.volume_max_db_set = 1;
+  }
+#endif
   debug(1, "audio backend is \"%s\".", config.output_name);
   config.output->init(argc - audio_arg, argv + audio_arg);
 

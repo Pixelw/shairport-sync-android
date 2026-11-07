@@ -13,4 +13,6 @@ int sps_companion_picture(const char *data, size_t length);
 void sps_companion_timing(int connection, uint64_t frames, uint32_t timestamp);
 /* 返回已发布的帧计数，避免 ARM32 上跨线程撕裂读取。 */
 uint64_t sps_companion_frames(int connection);
+/* 请求系统媒体音量；负数表示查询，成功时返回实际的 AirPlay 音量。 */
+int sps_companion_system_volume(int request, double *volume);
 #endif
