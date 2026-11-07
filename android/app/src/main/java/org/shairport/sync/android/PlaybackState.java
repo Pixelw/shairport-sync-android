@@ -8,6 +8,8 @@ final class PlaybackState {
     final String session, state, title, artist, album, device;
     final long position, duration, cover;
     final int controls;
+    // 0 表示投放已断开，-1 表示旧快照未提供连接号。
+    final int connection;
     final boolean positionValid;
     final long receivedAt;
 
@@ -17,6 +19,7 @@ final class PlaybackState {
         album = value.optString("album"); device = value.optString("device");
         position = Math.max(0, value.optLong("positionMs"));
         duration = Math.max(0, value.optLong("durationMs")); cover = value.optLong("cover");
+        connection = value.optInt("connection", -1);
         controls = value.optInt("controls"); positionValid = value.optInt("positionValid") != 0;
         receivedAt = now;
     }

@@ -121,7 +121,7 @@ public final class SPSCompanionService extends Service implements CompanionConne
             JSONObject value = new JSONObject().put("id", id).put("session", state.session).put("command", command);
             if (connection.command(value)) {
                 pendingId = id; pendingUntil = SystemClock.elapsedRealtime() + 5000;
-                message = "正在请求发送端…";
+                message = "";
             } else message = "连接不可用";
         } catch (Exception ignored) { message = "无法发送操作"; }
         notifyObservers();
@@ -171,7 +171,8 @@ public final class SPSCompanionService extends Service implements CompanionConne
             } else {
                 try {
                     JSONObject retained = new JSONObject(savedSnapshot);
-                    retained.put("state", "stopped").put("controls", 0);
+                    retained.put("state", "stopped").put("controls", 0)
+                            .put("connection", next.connection);
                     state = new PlaybackState(retained, SystemClock.elapsedRealtime());
                     savedSnapshot = retained.toString();
                 } catch (Exception ignored) { state = next; }

@@ -2125,15 +2125,24 @@ void handle_audio_mode(rtsp_conn_info *conn, rtsp_message *req,
   debug_log_rtsp_message(3, NULL, req);
 }
 
+/* 与 Companion 快照共用主连接锁，替换时保护名称指针。 */
+static void set_ap2_client_name(rtsp_conn_info *conn, char *name) {
+  if (name == NULL || *name == '\0') {
+    free(name);
+    return;
+  }
+  pthread_rwlock_wrlock(&principal_conn_lock);
+  free(conn->ap2_client_name);
+  conn->ap2_client_name = name;
+  pthread_rwlock_unlock(&principal_conn_lock);
+}
+
 void handle_post(rtsp_conn_info *conn, rtsp_message *req, rtsp_message *resp) {
   resp->respcode = 200;
 
   char *hdr = msg_get_header(req, "X-Apple-Client-Name");
-  if (hdr) {
-    if (conn->ap2_client_name)
-      free(conn->ap2_client_name);
-    conn->ap2_client_name = strdup(hdr);
-  }
+  if (hdr && *hdr)
+    set_ap2_client_name(conn, strdup(hdr));
   
 #ifdef CONFIG_AIRPLAY_2
 #ifdef CONFIG_METADATA
@@ -2397,9 +2406,9 @@ void handle_setup_2(rtsp_conn_info *conn, rtsp_message *req, rtsp_message *resp)
 
   plist_t nameItem = plist_dict_get_item(messagePlist, "name");
   if (nameItem != NULL) {
-    if (conn->ap2_client_name)
-      free(conn->ap2_client_name);
-    plist_get_string_val(nameItem, &conn->ap2_client_name); // we need to free it!
+    char *name = NULL;
+    plist_get_string_val(nameItem, &name);
+    set_ap2_client_name(conn, name);
   }
 
   // see if the incoming plist contains a "streams" array

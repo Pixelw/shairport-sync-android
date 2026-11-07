@@ -226,7 +226,9 @@ static plist_t snapshot(void) {
       (m->player_state == PS_PLAYING || m->play_status == PS_PLAYING) ? "playing" : "idle";
   str(p, "state", state);
   str(p, "title", m->npi.track_name); str(p, "artist", m->npi.artist_name);
-  str(p, "album", m->npi.album_name); str(p, "device", m->client_name);
+  str(p, "album", m->npi.album_name);
+  const char *device = present ? conn->ap2_client_name : NULL;
+  str(p, "device", device && *device ? device : m->client_name);
   uint64_t position = 0, duration = 0;
   int valid = 0;
   if (m->npi.songtime_in_microseconds.valid) duration = m->npi.songtime_in_microseconds.value / 1000;

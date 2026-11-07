@@ -195,6 +195,9 @@ class PlayerV2Activity : ComponentActivity(), SPSCompanionService.Observer {
         val playing = !waiting && state?.state == "playing"
         val mask = if (waiting) 0 else state?.controls ?: 0
         val usable = !stopped && !current.pending()
+        val device = state?.device.orEmpty()
+        val senderDisconnected = !waiting &&
+            (state.connection == 0 || (state.connection < 0 && state.state == "stopped"))
         screen = PlayerSnapshot(
             title = if (waiting) "等待 AirPlay" else state!!.title.ifEmpty { "未知歌曲" },
             artist = if (waiting) "Shairport Sync Android" else state!!.artist.ifEmpty { "未知艺术家" },
@@ -210,11 +213,11 @@ class PlayerV2Activity : ComponentActivity(), SPSCompanionService.Observer {
             transport = usable && mask and (if (playing) 2 else 1) != 0,
             next = usable && mask and 16 != 0,
             message = when {
+                senderDisconnected -> "${device.ifBlank { "未知投放" }}设备已断开"
                 !online -> "正在连接本机 SPS…"
                 current.message().isNotEmpty() -> current.message()
-                stopped && !waiting -> "播放已结束"
                 waiting -> "准备就绪"
-                else -> ""
+                else -> device.ifBlank { "未知投放设备" }
             }
         )
     }
@@ -379,7 +382,7 @@ private fun PlayerLayout(
                 line,
                 Modifier
                     .clipToBounds()
-                    .basicMarquee(iterations = Int.MAX_VALUE)
+                    .basicMarquee(iterations = Int.MAX_VALUE, velocity = 60.dp, repeatDelayMillis = 5500)
                     // 边距随文字一起滚动，裁剪区域可延伸到屏幕两侧。
                     .padding(horizontal = 24.dp),
                 style = TextStyle(
@@ -424,7 +427,7 @@ private fun PlayerLayout(
                         Modifier
                             .fillMaxWidth()
                             .clipToBounds()
-                            .basicMarquee(iterations = Int.MAX_VALUE),
+                            .basicMarquee(iterations = Int.MAX_VALUE, velocity = 80.dp, repeatDelayMillis = 5500),
                         FontWeight.Bold
                     )
                     Label(
@@ -434,7 +437,7 @@ private fun PlayerLayout(
                             .padding(top = 2.dp)
                             .fillMaxWidth()
                             .clipToBounds()
-                            .basicMarquee(iterations = Int.MAX_VALUE),
+                            .basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 5500),
                         color = Color.White.copy(alpha = .6f)
                     )
                     Spacer(Modifier.height(18.dp))
@@ -712,7 +715,7 @@ private fun ControlsPreview() {
         PlayerSnapshot(
             title = "FEVER DREAM", artist = "Alex Warren", playing = true,
             position = 96_000, duration = 153_000, positionValid = true,
-            previous = true, transport = true, next = true, message = ""
+            previous = true, transport = true, next = true, message = "iPhone"
         ), true, "9:03"
     ) {}
 }
